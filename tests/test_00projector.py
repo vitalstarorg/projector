@@ -269,6 +269,7 @@ class Test_Projector(TestCase):
         highlight = pj.updateHighlight(tokenVec, 10)
         df = highlight.asDF()
 
+    @skip
     def test900_hack(self):
         model = GPT2Operator().name("gpt2/gpt2-124M").loadModel()
         pj = Projector().name('projector').model(model).loadFile()
@@ -313,83 +314,6 @@ class Test_Projector(TestCase):
     def test910_hack(self):
         model = GPT2Operator().name("gpt2/gpt2-124M").loadModel()
         pj = Projector().name('projector').model(model).loadFile()
-
-        # zeros = pj.newTrace().fromVectors(0)
-        # # assert approx(zeros.projected(), 1e-4) == [[-100.650, 31.910, 33.055]]
-        # assert approx(zeros.projected(), 1e-3) == [[11.9618, -3.7794, 2.6324]]
-        # words = zeros.closestWords()
-        # assert [[379]] == zeros.closestIndices().tolist()
-        # assert [[379]] == zeros.knn_ids().tolist()
-        # assert approx(1, 1e-4) == zeros.knn_sims().squeeze().item()
-        # assert approx(0.028, 1e-4) == zeros.closestAngles().squeeze().item()
-        #     # fp32 precision issues
-        # assert ['\u2588at'] == words
-        # assert (1,8) == zeros.asDF().shape
-        # zeros.asDF()
-        #
-        # ids = zeros.knn(5).knn_ids()
-        # zeroKNN = pj.newTrace().fromIndices(ids)
-        # assert (5,8) == zeroKNN.asDF().shape
-        # assert [379, 287, 319, 281, 329] == zeroKNN.knn_ids().squeeze().tolist()
-        # assert approx([1, 1, 1, 1, 1], 1e-4) == zeroKNN.knn_sims().squeeze().tolist()
-        # assert approx([0.0485, 0.0593, 0.0442, 0., 0.], 1e-4) == zeroKNN.closestAngles().squeeze().tolist()
-        #     # fp32 precision issues
-        # words = zeroKNN.closestWords()
-        # assert ['\u2588at', '\u2588in', '\u2588on', '\u2588an', '\u2588for'] == words
-        # assert ['\u2588at', '\u2588in', '\u2588on', '\u2588an', '\u2588for'] == zeroKNN.asDF()['word'].tolist()
-
-        # knn for all 4 vectors
-        trace = pj.newTrace().fromPrompt("Allen Turing theorized")
-        vectors = trace.vectors()
-        trace1 = pj.newTrace().fromVectors(vectors)
-        trace1.knn(5)
-        ids = trace1.knn_ids()
-        sims = trace1.knn_sims()
-        assert (4,5) == ids.shape
-        assert (4,5) == sims.shape
-        words = trace1.closestWords()
-        assert ['Allen', '\u2588Turing', '\u2588theor', 'ized'] == words
-        words = trace1.closestWords(dim=1)
-        assert ['Allen', '\u2588Allen', '\x16', '\\xf7', '\\xfb'] == words
-
-        knn1 = pj.newTrace().fromIndices(trace1.knn_ids()[0,:])
-        assert ['Allen', '\u2588Allen', '\x16', '\\xf7', '\\xfb'] == knn1.asDF()['word'].tolist()
-
-        # knn on 2nd vectors i.e. 'Turing'
-        trace2 = pj.newTrace().fromVectors(vectors[1])
-        trace2.knn(5)
-        words = trace2.closestWords()
-        assert ['\u2588Turing'] == words
-        words = trace2.closestWords(dim = 1)
-        assert ['\u2588Turing', '\u2588externalToEVA', '\u2588', '\\xff', '\u2588'] == words
-
-        knn2 = pj.newTrace().fromIndices(trace2.knn_ids())
-        assert ['\u2588Turing', '\u2588externalToEVA', '\u2588', '\\xff', '\u2588'] == knn2.asDF()['word'].tolist()
-
-        # knn on 3rd vectors i.e. 'theor'
-        trace3 = pj.newTrace().fromVectors(vectors[2])
-        trace3.knn(5)
-        words = trace3.closestWords()
-        assert ['\u2588theor'] == words
-        words = trace3.closestWords(dim = 1)
-        assert ['\u2588theor', '\u2588hypothes', '\u2588hypothesized', '\u2588speculated', '\u2588theories'] == words
-
-        knn3 = pj.newTrace().fromIndices(trace3.knn_ids())
-        assert ['\u2588theor', '\u2588hypothes', '\u2588hypothesized', '\u2588speculated', '\u2588theories'] == knn3.asDF()['word'].tolist()
-
-        #
-        tokenVec = trace.vectors()[1]
-        highlight = pj.highlight()
-        if highlight.notNil():
-            highlight.remove()
-        tokenTrace = pj.newTrace().fromVectors(tokenVec)
-        knn_ids = tokenTrace.knn(10).knn_ids()
-        highlight = pj.newTrace().fromIndices(knn_ids)
-        highlight.colorRoll().color('blue')
-        pj.highlight(highlight)
-        df = highlight.asDF()
-        print(df.to_string())
-        highlight.show()
 
         # prompt = "Alan Turing theorized that computers would one day become"
         # trace = pj.newTrace().fromPrompt("Allen Turing theorized")

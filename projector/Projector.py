@@ -127,64 +127,6 @@ class Projector(SObject):
         codes = tokenizer.encode(text)
         return codes
 
-    def _vectors(self, vectors):
-        if isinstance(vectors, list):
-            if isinstance(vectors[0], list):  # List of vectors
-                vectors = torch.tensor(vectors)
-            else:  # Single vector in list
-                vectors = torch.tensor(vectors).unsqueeze(0)
-        elif isinstance(vectors, torch.Tensor) and vectors.dim() == 1:  # Single vector
-            vectors = vectors.unsqueeze(0)
-        return vectors
-
-    def closestSimilarities(self, vectors):
-        vectors = self._vectors(vectors)
-        wte = self.model().modelParams()['wte']
-        vnorms = vectors.norm(dim=1, keepdim=True)
-        wnorms = wte.norm(dim=1, keepdim=True)
-        if vnorms.shape == (1,1) and vnorms == 0:      # zero vector
-            return torch.tensor([[0]])
-        vectors = vectors / torch.where(vnorms == 0, torch.ones_like(vnorms), vnorms)
-        wte = wte / torch.where(wnorms == 0, torch.ones_like(wnorms), wnorms)
-        sim = torch.mm(vectors, wte.T)
-        return sim
-
-    def closestAngles(self, vectors, k=1):
-        sim = self.closestSimilarities(vectors)
-        sim = torch.clamp(sim, -1, 1)
-        maxSim, top_k_indices = torch.topk(sim, k, dim=1)
-        rad = torch.arccos(maxSim)
-        deg = rad * (180/torch.pi)
-        degrees = torch.round(deg * 10000) / 10000
-        return degrees
-
-    def closestIndices(self, vectors, k=1):
-        wte = self.model().modelParams()['wte']
-        sim = self.closestSimilarities(vectors)
-        if sim.shape == (1,1) and sim == 0:      # zero vector
-            wnorms = wte.norm(dim=1, keepdim=True)
-            nearZero = torch.argmin(wnorms)
-            return torch.tensor([[nearZero]])
-        sim = torch.mm(vectors, wte.T)
-        # distances = torch.cdist(vectors, wte, p=2)  # L2 norm
-        # _, top_k_indices = torch.topk(-distances, k, dim=1)
-        _, top_k_indices = torch.topk(sim, k, dim=1)
-        return top_k_indices
-
-    def closestWords(self, vectors):
-        indices = self.closestIndices(vectors)
-        indices = indices[:, 0]     # getting the first column, closest words
-        selected = self.projection().select(indices.tolist())
-        words = selected['word'].tolist()
-        return words
-        # words = self.model().words()
-        # if indices.shape == (1,):
-        #     closest = [words[indices.item()]]
-        # else:
-        #     closest = [words[index] for index in indices]
-        # return closest
-
-
     #### Plotly Functions
     def updateHighlight(self, tokenVector, k):
         highlight = self.highlight()
@@ -211,22 +153,6 @@ class Projector(SObject):
             df = highlight.asDF()
             print(df)
             highlight.show()
-
-            # # knn = trace.closestIndices(k)[idx,:].tolist()
-            # knn = trace.closestIndices(k)[idx,:]
-            # highlight = self.highlight()
-            # if highlight.notNil():
-            #     highlight.remove()
-            # highlight = trace.projector().newTrace().fromIndices(knn)
-            # highlight.colorRoll().color('blue')
-            # self.highlight(highlight)
-            # df = highlight.df()
-            # angles = highlight.closestAngles(k)
-            # df['angle'] = angles[idx,:]
-            # sims = highlight.knn(k)
-            # df['sim'] = sims[idx,:]
-            # print(df)
-            # highlight.show()
 
     def showEmbedding(self):
         def on_click2(trace, points, selector):
@@ -391,12 +317,22 @@ class Trace(SObject):
         id = self.idDigits(8)
         self.name(id)
 
+    def _vectors(self, vectors):
+        if isinstance(vectors, list):
+            if isinstance(vectors[0], list):  # List of vectors
+                vectors = torch.tensor(vectors)
+            else:  # Single vector in list
+                vectors = torch.tensor(vectors).unsqueeze(0)
+        elif isinstance(vectors, torch.Tensor) and vectors.dim() == 1:  # Single vector
+            vectors = vectors.unsqueeze(0)
+        return vectors
+
     def fromIndices(self, indices):
         projector = self.projector()
         projection = self.projection()
         wte = projector.model().modelParams()['wte']
         vectors = List()
-        indices1 = projector._vectors(indices)
+        indices1 = self._vectors(indices)
         indices2 = indices1.squeeze(0)
         for id in indices2:
             vectors.append(wte[id])
@@ -416,20 +352,20 @@ class Trace(SObject):
         inference.wte()
         return self.fromIndices(ids)
 
-    def fromVectors2(self, vectors):
-        projector = self.projector()
-        projection = self.projection()
-        if vectors is 0:
-            # n_embd = projector.model().modelParams().getAsNumber('n_embd')
-            n_embd = projector.model().modelParams().getValue('n_embd')
-            vectors = torch.zeros(n_embd)
-        vectors = projector._vectors(vectors)
-        projected = projection.project(vectors)
-        self.projected(projected)
-
-        # indices = projector.closestIndices(vectors)[:,0].tolist()
-        indices = projector.closestIndices(vectors)[:,0]
-        return self.fromIndices(indices)
+    # def fromVectors2(self, vectors):
+    #     projector = self.projector()
+    #     projection = self.projection()
+    #     if vectors is 0:
+    #         # n_embd = projector.model().modelParams().getAsNumber('n_embd')
+    #         n_embd = projector.model().modelParams().getValue('n_embd')
+    #         vectors = torch.zeros(n_embd)
+    #     vectors = projector._vectors(vectors)
+    #     projected = projection.project(vectors)
+    #     self.projected(projected)
+    #
+    #     # indices = projector.closestIndices(vectors)[:,0].tolist()
+    #     indices = projector.closestIndices(vectors)[:,0]
+    #     return self.fromIndices(indices)
 
     ########
     def fromVectors(self, vectors):
@@ -439,7 +375,7 @@ class Trace(SObject):
             # n_embd = projector.model().modelParams().getAsNumber('n_embd')
             n_embd = projector.model().modelParams().getValue('n_embd')
             vectors = torch.zeros(n_embd)
-        vectors = projector._vectors(vectors)
+        vectors = self._vectors(vectors)
         projected = projection.project(vectors)
         self.vectors(vectors)
         self.projected(projected)
