@@ -220,9 +220,10 @@ class GPT2Operator(SObject):
 
     def project(self, matrix, ndim=3):
         mean = matrix.mean(dim=0)
-        var = matrix.var(dim=0)
-        std = torch.sqrt(var + self.epsilon().value())
+        # var = matrix.var(dim=0)
+        # std = torch.sqrt(var + self.epsilon().value())
         # std = matrix.std(dim=0, unbiased=False)
+        std = torch.ones_like(mean)
         z = (matrix - mean) / std
         covariance = torch.mm(z.T, z) / (z.size(0) - 1)
         eigenvalues, eigenvectors = torch.linalg.eig(covariance)
@@ -232,6 +233,13 @@ class GPT2Operator(SObject):
         eigenvalues = eigenvalues[sorted_indices]
         eigenvectors = eigenvectors[:, sorted_indices]
         components = eigenvectors[:, :ndim]
+
+        # Make the PCA a bit deterministic
+        first = components[0,:]
+        for i in range(first.shape[0]):
+            element = first[i]
+            if element > 0: continue
+            components[:,i] = -components[:,i]
         projected = torch.mm(z, components)
         # Not scalable
         # U, S, V_T = torch.linalg.svd(z)
@@ -239,7 +247,10 @@ class GPT2Operator(SObject):
         # comp = comp[:, :ndim]
         # emb = torch.mm(z, comp)
         emptyModel = self.createEmpty()    # visitor.projectVector()
-        projection = Projection().emptyModel(emptyModel).projected(projected).components(components).mean(mean).std(std)
+        projection = Projection().emptyModel(emptyModel).\
+                        projected(projected).\
+                        components(components).\
+                        mean(mean).std(std)
 
         # calculate the variance ratio
         total_variance = torch.sum(eigenvalues)

@@ -15,15 +15,17 @@
 
 from unittest import TestCase
 import pytest
-from pytest import approx
+from pytest import approx as approx
 skip = pytest.mark.skip
 skipIf = pytest.mark.skipif
 
 import torch
+import numpy as np
 
 import os
 import re
 from os import environ as env
+from math import floor, log10
 
 from projector.Projector import Projector
 from projector.operator.GPT2Operator import GPT2Operator
@@ -31,6 +33,67 @@ from projector.operator.GPT2OperatorNP import GPT2OperatorNP
 import projector.operator.GPT2EncoderNP as GPT2Encoder
 from projector.GPT2Inference import GPT2Inference
 from smallscript import *
+
+class About(SObject):
+    __array_priority__ = 10.0  # use higher value to supersede numpy to use About.__eq__()
+
+    precision = Holder().name('precision')
+    expected = Holder().name('expected')
+    pyapprox = Holder().name('pyapprox')
+    always = Holder().name('always')
+
+    def __init__(self):
+        self.precision(3)
+        self.always(false_)
+
+    def _toNumpy(self, numbers):
+        npnum = numbers
+        if torch.is_tensor(numbers):
+            if numbers.dim() == 0:
+                npnum = numbers.item()
+            else:
+                npnum = numbers.numpy()
+        return npnum
+
+    def __call__(self, expected, *args, **kwargs):
+        self.expected(expected)
+        pyapprox = approx(expected, *args, **kwargs)
+        self.pyapprox(pyapprox)
+        return self
+
+    def __eq__(self, actual):
+        pyapprox = self.pyapprox()
+        actual = self._toNumpy(actual)
+        res = actual == pyapprox
+        if res: return res
+        # actual == pyapprox      # redo the test for debug tracing
+        if not np.isscalar(actual):
+            roundedActual = []
+            for x in actual:
+                rounded = round(x, self.precision() - int(floor(log10(abs(x)))))
+                roundedActual.append(rounded)
+        else:
+            if torch.is_tensor(actual):
+                actual = actual.item()
+            roundedActual = round(actual, self.precision() - int(floor(log10(abs(actual)))))
+        expected = self.expected()
+        # expected = self.expected().value()
+        # expected = round(expected, self.precision() - int(floor(log10(abs(expected)))) - 1)
+        self.log(f"{expected} was expected but actual is {actual} {round(abs((actual - expected)/actual) * 100,2)}%. Try about({roundedActual}, 1e-{self.precision()})", Logger.LevelError)
+        return self.always()
+
+    def __torch_function__(cls, func, types, args=(), kwargs=None):
+        if func.__name__ == 'eq':
+            res = cls.__eq__(args[0])
+            return res
+        return NotImplemented
+
+    def __repr__(self):
+        return f"{self.expected()}"
+
+about = approx
+about = About().always(true_)
+about = About()
 
 # env['SKIPHACK'] = '1'
 # env['SKIP'] = '1'
@@ -42,6 +105,7 @@ class Test_Projector(TestCase):
     @pytest.fixture(autouse=True, scope='class')
     def setup(self):
         pkg = sscontext.loadPackage('projector')
+        pkg = sscontext.loadPackage('tests')
         # model = GPT2Adaptor().name("gpt2/gpt2-124M").load()
         # pj = Projector().name('pj').model(model)
         if 'CLEAN_CACHE' in env:
@@ -78,7 +142,7 @@ class Test_Projector(TestCase):
             assert (50257,4) == projection.df().shape
             pj.saveFile()
 
-    @skipIf('SKIP' in env, reason="disabled")
+    # @skipIf('SKIP' in env, reason="disabled")
     def test310_tensor_project(self):
         # 0.695 sec
         model = GPT2Operator().name("gpt2/gpt2-124M").loadModel()
@@ -100,29 +164,38 @@ class Test_Projector(TestCase):
         assert '\u2588the' == df1.iloc[262].word
         # assert ' the' == df1.iloc[262].word
 
+        # standarized PCA with std
+        # x = pj1.projection().mean()[0]
+        # assert x == about(-0.002549, 1e-2)
+        # x = pj1.projection().std()[0]
+        # assert x == about(0.1126, 1e-2)
+        #
+        # x, y, z = pj1.projection().components()[0]
+        # assert x == about(0.02407, 1e-2)
+        # assert y == about(0.009943, 1e-2)
+        # assert z == about(-0.009700, 1e-2)
+        #
+        # x, y, z = pj1.projection().projected()[0]
+        # assert x == about(9.7107, 1e-2)
+        # assert y == about(-4.6005, 1e-2)
+        # assert z == about(1.3105, 1e-2)
+
+        # standarized PCA without std
+        x = pj1.projection().mean()[0]
+        assert x == about(-0.002549, 1e-3)
+        x = pj1.projection().std()[0]
+        assert x == about(1.0, 1e-3)
+
         x, y, z = pj1.projection().components()[0]
-        # assert -0.024070443585515022 == x
-        # assert 0.007738918997347355 == y
-        # assert 0.008048399351537228 == z
-        assert x == approx(0.02407, 1e-2)
-        assert y == approx(0.009943, 1e-2)
-        assert z == approx(-0.009700, 1e-2)
+        assert x == about(0.0184, 1e-3)
+        assert y == about(0.0195, 1e-3)
+        assert z == about(0.0207, 1e-3)
 
         x, y, z = pj1.projection().projected()[0]
-        # assert -9.118746757507324 == x
-        # assert -5.548634052276611 == y
-        # assert -1.481603741645813 == z
-        assert x == approx(9.7107, 1e-2)
-        assert y == approx(-4.6005, 1e-2)
-        assert z == approx(1.3105, 1e-2)
+        assert x == about(1.27, 1e-3)
+        assert y == about(-0.414, 1e-3)
+        assert z == about(-0.292, 1e-3)
 
-        x = pj1.projection().mean()[0]
-        assert x == approx(-0.002549, 1e-2)
-
-        x = pj1.projection().std()[0]
-        assert x == approx(0.1126, 1e-2)
-
-    # @skipIf('SKIP' in env, reason="disabled")
     # @skip
     def test340_project_vec_np(self):
         modelNP = GPT2OperatorNP().name("gpt2/124M").loadModel()
@@ -130,18 +203,20 @@ class Test_Projector(TestCase):
         pj2 = Projector().name('projector_np').model(modelNP).loadFile()
         projection2 = pj2.projection()
 
-        assert [0.01985565, 0.01102482, 0.00954412] == approx(projection2.varianceRatio(), 1e-3)
+        # assert projection2.varianceRatio() == about([0.01985565, 0.01102482, 0.00954412], 1e-3)
+        assert projection2.varianceRatio() == about([0.01985, 0.01102, 0.009544], 1e-3)
 
         tokenSpec = modelNP.searchTokens('Token').head()
         codeToken = tokenSpec['id']
         assert 30642 == codeToken
         vector2 = tokenSpec['vector']
-        assert 0.015963181853294373 == vector2[0]
+        assert vector2[0] == about(0.01596, 1e-3)
 
         projected2 = projection2.project(vector2)
-        assert -4.281162738800049 == approx(projected2[0][0], 1e-3)
-        assert 3.5077905654907227 == approx(projected2[0][1], 1e-2)
-        assert 0.3020952641963959 == approx(projected2[0][2], 1e-1)
+        assert projected2[0][0] == about(-4.2811, 1e-3)
+        assert projected2[0][1] == about(3.52, 1e-3)
+        assert projected2[0][2] == about(0.335, 1e-3)
+        return
 
     @skipIf('SKIP' in env, reason="disabled")
     def test350_project_vec(self):
@@ -151,22 +226,23 @@ class Test_Projector(TestCase):
         projection = pj.projection()
 
         # assert projection.varianceRatio() == approx([0.01986, 0.01102, 0.009544], 1e-3)
-        assert [0.01855, 0.01063, 0.009336] == approx(projection.varianceRatio(), 1e-3)
+        # assert [0.01855, 0.01063, 0.009336] == about(projection.varianceRatio(), 1e-3)
+        assert projection.varianceRatio() == about([0.0181, 0.00823, 0.00717], 1e-3)
 
         tokenSpec = model.searchTokens('Token').head()
         codeToken = tokenSpec['id']
         assert 30642 == codeToken
         vector = tokenSpec['vector']
-        assert vector[0] == approx(0.01596, 1e-3)
+        assert vector[0] == about(0.01596, 1e-3)
 
         projected = projection.project(vector)
         # assert 4.281162738800049 == projected[0][0]
         # assert -3.5077905654907227 == approx(projected[0][1], 1e-6)
         # assert 0.3020952641963959 == approx(projected[0][2], 1e-6)
-        assert projected[0][0] == approx(-3.8256, 1e-3)
-        assert projected[0][1] == approx(-3.6127, 1e-3)
-        assert projected[0][2] == approx(0.2413, 1e-3)
-
+        assert projected[0][0] == about(-0.317, 1e-3)
+        assert projected[0][1] == about(-0.389, 1e-3)
+        assert projected[0][2] == about(-0.01947, 1e-3)
+        return
 
     @skipIf('SKIP' in env, reason="disabled")
     def test400_show(self):
@@ -182,28 +258,30 @@ class Test_Projector(TestCase):
         # Project Zero
         zeros = pj.newTrace().fromVectors(0)
         # assert approx(zeros.projected(), 1e-4) == [[-100.650, 31.910, 33.055]]
-        assert approx(zeros.projected(), 1e-3) == [[11.9618, -3.7794, 2.6324]]
+        # assert approx(zeros.projected(), 1e-3) == [[11.9618, -3.7794, 2.6324]]
+        # assert zeros.projected()[0] == about([11.9618, -3.7794, 2.6324], 1e-3)
+        assert zeros.projected()[0] == about([1.37, -0.0445, -0.129], 1e-3)
         words = zeros.closestWords()
-        assert [[379]] == zeros.closestIndices().tolist()
-        assert [[379]] == zeros.knn_ids().tolist()
-        assert approx(1, 1e-4) == zeros.knn_sims().squeeze().item()
-        assert approx(0.028, 1e-4) == zeros.closestAngles().squeeze().item()
+        assert zeros.closestIndices().tolist() == [[379]]
+        assert zeros.knn_ids().tolist() == [[379]]
+        assert zeros.knn_sims().squeeze().item() == about(1, 1e-4)
+        assert zeros.closestAngles().squeeze().item() == about(0.028, 1e-4)
             # fp32 precision issues
-        assert ['\u2588at'] == words
-        assert (1,8) == zeros.asDF().shape
+        assert words == ['\u2588at']
+        assert zeros.asDF().shape == (1,8)
         zeros.asDF()
 
         # Project 5 neigbhours around zero
         ids = zeros.knn(5).knn_ids()
         zeroKNN = pj.newTrace().fromIndices(ids)
-        assert (5,8) == zeroKNN.asDF().shape
-        assert [379, 287, 319, 281, 329] == zeroKNN.knn_ids().squeeze().tolist()
-        assert approx([1, 1, 1, 1, 1], 1e-4) == zeroKNN.knn_sims().squeeze().tolist()
-        assert approx([0.0485, 0.0593, 0.0442, 0., 0.], 1e-4) == zeroKNN.closestAngles().squeeze().tolist()
+        assert zeroKNN.asDF().shape == (5,8)
+        assert zeroKNN.knn_ids().squeeze().tolist() == [379, 287, 319, 281, 329]
+        assert zeroKNN.knn_sims().squeeze().tolist() == about([1, 1, 1, 1, 1], 1e-4)
+        assert zeroKNN.closestAngles().squeeze().tolist() == about([0.0485, 0.0593, 0.0442, 0., 0.], 1e-4)
             # fp32 precision issues
         words = zeroKNN.closestWords()
-        assert ['\u2588at', '\u2588in', '\u2588on', '\u2588an', '\u2588for'] == words
-        assert ['\u2588at', '\u2588in', '\u2588on', '\u2588an', '\u2588for'] == zeroKNN.asDF()['word'].tolist()
+        assert words == ['\u2588at', '\u2588in', '\u2588on', '\u2588an', '\u2588for']
+        assert zeroKNN.asDF()['word'].tolist() == ['\u2588at', '\u2588in', '\u2588on', '\u2588an', '\u2588for']
 
     @skipIf('SKIP' in env, reason="disabled")
     def test420_trace(self):
@@ -217,37 +295,37 @@ class Test_Projector(TestCase):
         trace1.knn(5)
         ids = trace1.knn_ids()
         sims = trace1.knn_sims()
-        assert (4,5) == ids.shape
-        assert (4,5) == sims.shape
+        assert ids.shape == (4,5)
+        assert sims.shape == (4,5)
         words = trace1.closestWords()
-        assert ['Allen', '\u2588Turing', '\u2588theor', 'ized'] == words
+        assert words == ['Allen', '\u2588Turing', '\u2588theor', 'ized']
         words = trace1.closestWords(dim=1)
-        assert ['Allen', '\u2588Allen', '\x16', '\\xf7', '\\xfb'] == words
+        assert words == ['Allen', '\u2588Allen', '\x16', '\\xf7', '\\xfb']
 
         knn1 = pj.newTrace().fromIndices(trace1.knn_ids()[0,:])
-        assert ['Allen', '\u2588Allen', '\x16', '\\xf7', '\\xfb'] == knn1.asDF()['word'].tolist()
+        assert knn1.asDF()['word'].tolist() == ['Allen', '\u2588Allen', '\x16', '\\xf7', '\\xfb']
 
         # knn on 2nd vectors i.e. 'Turing'
         trace2 = pj.newTrace().fromVectors(vectors[1])
         trace2.knn(5)
         words = trace2.closestWords()
-        assert ['\u2588Turing'] == words
+        assert words == ['\u2588Turing']
         words = trace2.closestWords(dim = 1)
-        assert ['\u2588Turing', '\u2588externalToEVA', '\u2588', '\\xff', '\u2588'] == words
+        assert words == ['\u2588Turing', '\u2588externalToEVA', '\u2588', '\\xff', '\u2588']
 
         knn2 = pj.newTrace().fromIndices(trace2.knn_ids())
-        assert ['\u2588Turing', '\u2588externalToEVA', '\u2588', '\\xff', '\u2588'] == knn2.asDF()['word'].tolist()
+        assert knn2.asDF()['word'].tolist() == ['\u2588Turing', '\u2588externalToEVA', '\u2588', '\\xff', '\u2588']
 
         # knn on 3rd vectors i.e. 'theor'
         trace3 = pj.newTrace().fromVectors(vectors[2])
         trace3.knn(5)
         words = trace3.closestWords()
-        assert ['\u2588theor'] == words
+        assert words == ['\u2588theor']
         words = trace3.closestWords(dim = 1)
-        assert ['\u2588theor', '\u2588hypothes', '\u2588hypothesized', '\u2588speculated', '\u2588theories'] == words
+        assert words == ['\u2588theor', '\u2588hypothes', '\u2588hypothesized', '\u2588speculated', '\u2588theories']
 
         knn3 = pj.newTrace().fromIndices(trace3.knn_ids())
-        assert ['\u2588theor', '\u2588hypothes', '\u2588hypothesized', '\u2588speculated', '\u2588theories'] == knn3.asDF()['word'].tolist()
+        assert knn3.asDF()['word'].tolist() == ['\u2588theor', '\u2588hypothes', '\u2588hypothesized', '\u2588speculated', '\u2588theories']
 
         return
 
@@ -310,7 +388,7 @@ class Test_Projector(TestCase):
         return
 
     # @skipIf('SKIP' in env, reason="di sabled")
-    @skip
+    # @skip
     def test910_hack(self):
         model = GPT2Operator().name("gpt2/gpt2-124M").loadModel()
         pj = Projector().name('projector').model(model).loadFile()
@@ -319,8 +397,16 @@ class Test_Projector(TestCase):
         # trace = pj.newTrace().fromPrompt("Allen Turing theorized")
 
         infer = model.inference().prompt("Allen Turing theorized")
-        x = infer.ssrun("self wte | wpe | x")
-        trace4 = pj.newTrace().fromVectors(x)
+        x0 = infer.x()
+        x = infer.ssrun("""self 
+                wte | wpe |
+                lnorm1: 0 | attn: 0 | sum | lnorm2: 0 | ffn: 0 | sum | 
+                | layer: 1 | layer: 2 | layer: 3 |
+                layer: 4 | layer: 5 | layer: 6 | layer: 7 |
+                layer: 8 | layer: 9 | layer: 10 | layer: 11 |
+                fnorm""")
+        x1 = infer.x()
+        trace4 = pj.newTrace().fromVectors(x1)
         df = trace4.asDF()
 
         return

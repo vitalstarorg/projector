@@ -352,22 +352,6 @@ class Trace(SObject):
         inference.wte()
         return self.fromIndices(ids)
 
-    # def fromVectors2(self, vectors):
-    #     projector = self.projector()
-    #     projection = self.projection()
-    #     if vectors is 0:
-    #         # n_embd = projector.model().modelParams().getAsNumber('n_embd')
-    #         n_embd = projector.model().modelParams().getValue('n_embd')
-    #         vectors = torch.zeros(n_embd)
-    #     vectors = projector._vectors(vectors)
-    #     projected = projection.project(vectors)
-    #     self.projected(projected)
-    #
-    #     # indices = projector.closestIndices(vectors)[:,0].tolist()
-    #     indices = projector.closestIndices(vectors)[:,0]
-    #     return self.fromIndices(indices)
-
-    ########
     def fromVectors(self, vectors):
         projector = self.projector()
         projection = self.projection()
@@ -379,25 +363,6 @@ class Trace(SObject):
         projected = projection.project(vectors)
         self.vectors(vectors)
         self.projected(projected)
-
-        # indices = self.knn(1).ids()
-        # indices = indices[:,0].tolist()
-        # # indices = projector.closestIndices(vectors)[:,0].tolist()
-        # # indices = torch.tensor(indices)
-        # # projected = projection.projected()[indices]
-        # df = projection.select(indices)                     # df is a copy
-        # df['x'] = projected[:,0]
-        # df['y'] = projected[:,1]
-        # df['z'] = projected[:,2]
-        # text = [String(i) for i in range(vectors.size(0))]
-        # df['text'] = text
-        # angles = self.closestAngles()
-        # df['angle'] = angles[:,0]
-        # df['sim'] = self.sim()[:,0]
-        # self.vectors(vectors).\
-        #         projected(projected).\
-        #         df(df)
-
         return self
 
     def asDF(self):
@@ -433,7 +398,6 @@ class Trace(SObject):
             average = vecs.mean(dim=0, keepdim=True)
             naverage = average / average.norm()
             maxSim = torch.mm(vecs, naverage.T)
-            # indices = torch.tensor([[nearZero]])
         else:
             vectors = vectors / torch.where(vnorms == 0, torch.ones_like(vnorms), vnorms)
             wte = wte / torch.where(wnorms == 0, torch.ones_like(wnorms), wnorms)
@@ -442,16 +406,8 @@ class Trace(SObject):
         self.knn_sims(maxSim)
         self.knn_ids(indices)
         return self
-        # projector = self.projector()
-        # vectors = self.vectors()
-        # sims = projector.closestSimilarities(vectors)
-        # maxSim, top_k_indices = torch.topk(sims, k, dim=1)
-        # return maxSim
 
     def closestAngles(self, k=1):
-        # projector = self.projector()
-        # vectors = self.vectors()
-        # angles = projector.closestAngles(vectors, k)
         sims = self.knn_sims()
         if sims is nil:
             sims = self.knn(k).knn_sims()
@@ -462,18 +418,12 @@ class Trace(SObject):
         return degrees
 
     def closestIndices(self, k=1):
-        # projector = self.projector()
-        # vectors = self.vectors()
-        # indices = projector.closestIndices(vectors, k)
         indices = self.knn_ids()
         if indices is nil:
             indices = self.knn(k).knn_ids()
         return indices
 
     def closestWords(self, dim=0):
-        # projector = self.projector()
-        # vectors = self.vectors()
-        # words = projector.closestWords(vectors)
         indices = self.closestIndices()
         if dim == 0:
             indices = indices[:, 0]
