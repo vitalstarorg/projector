@@ -33,6 +33,7 @@ from datetime import datetime
 from IPython.display import display
 from pathlib import Path
 from .operator.Projection import Projection
+from .operator.Similarity import Similarity
 
 class Projector(SObject):
     model = Holder().name('model')
@@ -58,6 +59,15 @@ class Projector(SObject):
             filename = defaultname
         self.setValue('filename', filename)
         return filename
+
+    def similarity(self, similarity=""):
+        if similarity != "":
+            similarity.model(self.model())
+        res = self._getOrSet('similarity', similarity, nil)
+        if res is nil:
+            res = self.model().getSimilarity()
+            self.setValue('similarity', res)
+        return res
 
     #### File I/O
     def hasFile(self):
@@ -99,11 +109,11 @@ class Projector(SObject):
         return self
 
     #### Projection matrix operations
-    def project(self, dim=3):
+    def project(self, dim=3):       # here ....
         projection = self.projection()
         if projection is nil:
             wte = self.model().modelParams().getValue('wte')
-            projection = self.model().project(wte, dim)
+            projection = self.model().projectMatrix(wte, dim)
             self.projection(projection)
             dataframe = pd.DataFrame(projection.projected(), columns=['x', 'y', 'z'])
             words = self.model().words('_')
@@ -114,7 +124,8 @@ class Projector(SObject):
     def projectVector(self, vectors):
         projection = self.project()
         model = self.model()
-        projected = model.projectVector(projection, vectors)
+        # projected = model.projectVector(projection, vectors)
+        projected = projection.projectVector(vectors)
         return projected
 
     def searchTokens(self, spelling, n = 5):
@@ -134,7 +145,14 @@ class Projector(SObject):
             highlight.remove()
         tokenTrace = self.newTrace().fromVectors(tokenVector)
         knn_ids = tokenTrace.knn(k).knn_ids()
-        highlight = self.newTrace().fromIndices(knn_ids)
+        knn_sims = tokenTrace.knn_sims()
+        knn_angles = tokenTrace.knn_angles()
+        highlight = self.newTrace().\
+                            fromIndices(knn_ids).\
+                            knn_ids(knn_ids).\
+                            knn_sims(knn_sims).\
+                            knn_angles(knn_angles).\
+                            colorRoll(ColorRoll())
         highlight.colorRoll().color('blue')
         self.highlight(highlight)
         return highlight
@@ -254,6 +272,7 @@ class Projector(SObject):
         projection = self.projection()
         trace = Trace().projector(self).\
                     projection(projection).\
+                    similarity(self.similarity().copy()).\
                     inference(inference).\
                     colorRoll(self.colorRoll())
                     # colorRoll(ColorRoll().reset(self.colorRoll().coloridx()))
@@ -310,8 +329,10 @@ class Trace(SObject):
     vectors = Holder().name('vectors')          # full scale vectors
     projected = Holder().name('projected')      # projected vectors
     colorRoll = Holder().name('colorRoll')
-    knn_sims = Holder().name('knn_sims')                # knn similarity to WTE
-    knn_ids = Holder().name('knn_ids')                  # knn Ids to tokens
+    knn_sims = Holder().name('knn_sims')        # knn similarity to WTE
+    knn_ids = Holder().name('knn_ids')          # knn Ids to tokens
+    knn_angles = Holder().name('knn_angles')    # knn angles
+    similarity = Holder().name('similarity')
 
     def __init__(self):
         id = self.idDigits(8)
@@ -360,7 +381,7 @@ class Trace(SObject):
             n_embd = projector.model().modelParams().getValue('n_embd')
             vectors = torch.zeros(n_embd)
         vectors = self._vectors(vectors)
-        projected = projection.project(vectors)
+        projected = projection.projectVector(vectors)
         self.vectors(vectors)
         self.projected(projected)
         return self
@@ -368,8 +389,24 @@ class Trace(SObject):
     def asDF(self):
         projection = self.projection()
         projected = self.projected()
-        indices = self.knn(1).knn_ids()
-        indices = indices[:,0].tolist()
+        vectors = self.vectors()
+        indices = self.knn_ids()
+        if indices is nil:
+            indices = self.knn(1).knn_ids()
+        # indices = self.similarity().k(1).knn(vectors).ids()
+        if indices.dim() == 1:
+            indices = indices.tolist()
+            angles = self.knn_angles().tolist()
+            sims = self.knn_sims().tolist()
+        else:
+            if indices.shape[0] == 1 or indices.shape[1] == 1:
+                indices = indices.flatten().tolist()
+                angles = self.knn_angles().flatten().tolist()
+                sims = self.knn_sims().flatten().tolist()
+            else:
+                indices = indices[:,0].tolist()
+                angles = self.knn_angles()[:,0]
+                sims = self.knn_sims()[:,0]
         # indices = projector.closestIndices(vectors)[:,0].tolist()
         # indices = torch.tensor(indices)
         # projected = projection.projected()[indices]
@@ -379,45 +416,46 @@ class Trace(SObject):
         df['z'] = projected[:,2]
         text = [String(i) for i in range(projected.size(0))]
         df['text'] = text
-        angles = self.closestAngles()
-        df['angle'] = angles[:,0]
-        df['sims'] = self.knn_sims()[:, 0]
+        df['angle'] = angles
+        df['sims'] = sims
         df['norm'] = self.vectors().norm(dim=1)
         return df
 
     def knn(self, k=1):
-        projector = self.projector()
-        # vectors = projector._vectors(self.vectors())
         vectors = self.vectors()
-        wte = projector.model().modelParams()['wte']
-        vnorms = vectors.norm(dim=1, keepdim=True)
-        wnorms = wte.norm(dim=1, keepdim=True)
-        if vnorms.shape == (1,1) and vnorms == 0:      # zero vector
-            norms, indices = torch.topk(wnorms.T, k, largest=False)
-            vecs = wte[indices[0,:]] / wnorms[indices[0,:]]
-            average = vecs.mean(dim=0, keepdim=True)
-            naverage = average / average.norm()
-            maxSim = torch.mm(vecs, naverage.T)
-        else:
-            vectors = vectors / torch.where(vnorms == 0, torch.ones_like(vnorms), vnorms)
-            wte = wte / torch.where(wnorms == 0, torch.ones_like(wnorms), wnorms)
-            sim = torch.mm(vectors, wte.T)
-            maxSim, indices = torch.topk(sim, k, dim=1)
-        self.knn_sims(maxSim)
-        self.knn_ids(indices)
+        self.similarity().k(k).knn(vectors)
+        self.knn_sims(self.similarity().sims())
+        self.knn_ids(self.similarity().ids())
+        self.knn_angles(self.similarity().angles())
         return self
+        # projector = self.projector()
+        # vectors = self.vectors()
+        # wte = projector.model().modelParams()['wte']
+        # vnorms = vectors.norm(dim=1, keepdim=True)
+        # wnorms = wte.norm(dim=1, keepdim=True)
+        # if vnorms.shape == (1,1) and vnorms == 0:      # zero vector
+        #     norms, indices = torch.topk(wnorms.T, k, largest=False)
+        #     vecs = wte[indices[0,:]] / wnorms[indices[0,:]]
+        #     average = vecs.mean(dim=0, keepdim=True)
+        #     naverage = average / average.norm()
+        #     maxSim = torch.mm(vecs, naverage.T)
+        # else:
+        #     vectors = vectors / torch.where(vnorms == 0, torch.ones_like(vnorms), vnorms)
+        #     wte = wte / torch.where(wnorms == 0, torch.ones_like(wnorms), wnorms)
+        #     sim = torch.mm(vectors, wte.T)
+        #     maxSim, indices = torch.topk(sim, k, dim=1)
+        # self.knn_sims(maxSim)
+        # self.knn_ids(indices)
+        # return self
 
     def closestAngles(self, k=1):
-        sims = self.knn_sims()
-        if sims is nil:
-            sims = self.knn(k).knn_sims()
-        sims = torch.clamp(sims, -1, 1)
-        rad = torch.arccos(sims)
-        deg = rad * (180/torch.pi)
-        degrees = torch.round(deg * 10000) / 10000
-        return degrees
+        angles = self.knn_angles()
+        if angles is nil:
+            angles = self.knn(k).knn_angles()
+        return angles
 
     def closestIndices(self, k=1):
+        vectors = self.vectors()
         indices = self.knn_ids()
         if indices is nil:
             indices = self.knn(k).knn_ids()
@@ -429,7 +467,6 @@ class Trace(SObject):
             indices = indices[:, 0]
         else:
             indices = indices[0, :]
-        # indices = indices[:, 0]     # getting the first column, closest words
         selected = self.projection().select(indices.tolist())
         words = selected['word'].tolist()
         return words

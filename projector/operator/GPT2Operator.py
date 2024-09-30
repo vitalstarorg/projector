@@ -22,8 +22,9 @@ from smallscript import *
 from projector.GPT2Inference import GPT2Inference
 from pathlib import Path
 from dotenv import load_dotenv
-from .Projection import Projection
+from .Projection import Projection, GPT2Projection
 from .GPT2EncoderNP import Encoder, bytes_to_unicode
+from .Similarity import Similarity
 import json
 import difflib
 
@@ -31,7 +32,6 @@ class GPT2Operator(SObject):
     state = Holder().name('state')
     tokenizer = Holder().name('tokenizer')
     config = Holder().name('config')
-    # vocabs = Holder().name('vocabs')
     byte_decoder = Holder().name('byte_decoder')
 
     blockParams = Holder().name('blockParams').type('Map')
@@ -39,7 +39,6 @@ class GPT2Operator(SObject):
     blockfilter = Holder().name('blockfilter')
     modelkeys = Holder().name('modelkeys').type('List')
     blockkeys = Holder().name('blockkeys').type('List')
-    epsilon = Holder().name('epsilon')
 
     def __init__(self):
         self.blockfilter("h.{}.")
@@ -61,7 +60,6 @@ class GPT2Operator(SObject):
             append('fc.b'). \
             append('mlp | proj.w'). \
             append('mlp | proj.b')
-        self.epsilon(1e-4)
 
     def model(self, model=""):  # Hugging Face model
         res = self._getOrSet('model', model, nil)
@@ -153,7 +151,6 @@ class GPT2Operator(SObject):
         for token in closest:
             id = tokens[token]
             res[token] = {'id': id, 'vector': wte[id]}
-        # res = {token: tokens[token] for token in closest}
         return res
 
     def tokens(self):
@@ -181,83 +178,17 @@ class GPT2Operator(SObject):
         labels = self.tokens().keys()
         byte_decoder = self.byte_decoder()
         vocabs = self._words(labels, byte_decoder, replacement)
-
-        # Using HF to decode the token, but it is slow.
-        # Directly using GPT2 code makes it fast.
-
-        # nvocabs = self.modelParams().getAsNumber('n_vocab')
-        # whitespace = r"^\s{1}"
-        # vocabs = List()
-        # word = bytearray([encoder.byte_decoder[c] for c in token]).decode("utf-8", errors="backslashreplace")
-        # self.vocabs(vocabs)
-        # byte_encoder = bytes_to_unicode()
-        # byte_decoder = {v: k for k, v in byte_encoder.items()}
-        # if replacement == '':
-        #     for index in range(nvocabs):
-        #         word = self.tokenizer().decode([index])   <-- this is slow
-        #         vocabs.append(word)
-        # else:
-        #     for index in range(nvocabs):
-        #         word = self.tokenizer().decode([index])
-        #         word = re.sub(whitespace, replacement, word)
-        #         vocabs.append(word)
         return vocabs
 
-    def projectVector(self, projection, vectors):
-        if isinstance(vectors, list):
-            if isinstance(vectors[0], list):  # List of vectors
-                vectors = torch.tensor(vectors)
-            else:  # Single vector in list
-                vectors = torch.tensor(vectors).unsqueeze(0)
-        elif isinstance(vectors, torch.Tensor) and vectors.dim() == 1:  # Single vector
-            vectors = vectors.unsqueeze(0)
-        mean = projection.mean()
-        std = projection.std()
-        z = (vectors - mean)/std
-        components = projection.components()
-        projected = torch.mm(z, components)
-        return projected
-
-    def project(self, matrix, ndim=3):
-        mean = matrix.mean(dim=0)
-        # var = matrix.var(dim=0)
-        # std = torch.sqrt(var + self.epsilon().value())
-        # std = matrix.std(dim=0, unbiased=False)
-        std = torch.ones_like(mean)
-        z = (matrix - mean) / std
-        covariance = torch.mm(z.T, z) / (z.size(0) - 1)
-        eigenvalues, eigenvectors = torch.linalg.eig(covariance)
-        eigenvalues = eigenvalues.real
-        eigenvectors = eigenvectors.real
-        sorted_indices = torch.argsort(eigenvalues, descending=True)
-        eigenvalues = eigenvalues[sorted_indices]
-        eigenvectors = eigenvectors[:, sorted_indices]
-        components = eigenvectors[:, :ndim]
-
-        # Make the PCA a bit deterministic
-        first = components[0,:]
-        for i in range(first.shape[0]):
-            element = first[i]
-            if element > 0: continue
-            components[:,i] = -components[:,i]
-        projected = torch.mm(z, components)
-        # Not scalable
-        # U, S, V_T = torch.linalg.svd(z)
-        # comp = V_T.T
-        # comp = comp[:, :ndim]
-        # emb = torch.mm(z, comp)
-        emptyModel = self.createEmpty()    # visitor.projectVector()
-        projection = Projection().emptyModel(emptyModel).\
-                        projected(projected).\
-                        components(components).\
-                        mean(mean).std(std)
-
-        # calculate the variance ratio
-        total_variance = torch.sum(eigenvalues)
-        top_eigenvalues = eigenvalues[:ndim]
-        explained_variance_ratio = top_eigenvalues / total_variance
-        projection.varianceRatio(explained_variance_ratio)
+    def projectMatrix(self, matrix, ndim=3):
+        emptyModel = self.createEmpty()         # visitor.projectVector()
+        projection = GPT2Projection().emptyModel(emptyModel)
+        projection.projectMatrix(matrix, ndim=3)
         return projection
+
+    def getSimilarity(self):
+        similarity = Similarity().model(self)
+        return similarity
 
     def closestWords(self, vector, nwords=1):
         wte = self.findParamBySpecs('wte')

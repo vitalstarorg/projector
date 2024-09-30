@@ -373,7 +373,7 @@ class Test_GPT2(TestCase):
     @skipIf('SKIP' in env, reason="disabled")
     def test300_pca(self):
         wte = self.smodel.modelParams().getValue('wte')
-        projection = self.smodel.project(wte, 3)
+        projection = self.smodel.projectMatrix(wte, 3)
         assert (wte.shape[0], 3) == projection.projected().shape
         return
 

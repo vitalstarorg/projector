@@ -32,6 +32,7 @@ from projector.operator.GPT2Operator import GPT2Operator
 from projector.operator.GPT2OperatorNP import GPT2OperatorNP
 import projector.operator.GPT2EncoderNP as GPT2Encoder
 from projector.GPT2Inference import GPT2Inference
+from projector.operator.Similarity import *
 from smallscript import *
 
 class About(SObject):
@@ -62,24 +63,43 @@ class About(SObject):
         return self
 
     def __eq__(self, actual):
+        def pctString(expected, actual):
+            if abs(actual) < 1e-5:
+                diffPct = f"diff = {round(abs(actual - expected), 6)}"
+            else:
+                diffPct = f"{round(abs((actual - expected) / actual) * 100, 2)}%"
+            return diffPct
+
+        def roundPrecision(precision, actual):
+            if abs(actual) < 1e-5:
+                rounded = actual
+            else:
+                rounded = round(actual, self.precision() - int(floor(log10(abs(actual)))))
+            return rounded
+
         pyapprox = self.pyapprox()
         actual = self._toNumpy(actual)
         res = actual == pyapprox
         if res: return res
         # actual == pyapprox      # redo the test for debug tracing
+        expected = self.expected()
         if not np.isscalar(actual):
             roundedActual = []
             for x in actual:
-                rounded = round(x, self.precision() - int(floor(log10(abs(x)))))
+                rounded = roundPrecision(self.precision(), x)
                 roundedActual.append(rounded)
+            diffPct = [pctString(expected[i], actual[i]) for i in range(len(actual))]
         else:
             if torch.is_tensor(actual):
                 actual = actual.item()
-            roundedActual = round(actual, self.precision() - int(floor(log10(abs(actual)))))
-        expected = self.expected()
-        # expected = self.expected().value()
-        # expected = round(expected, self.precision() - int(floor(log10(abs(expected)))) - 1)
-        self.log(f"{expected} was expected but actual is {actual} {round(abs((actual - expected)/actual) * 100,2)}%. Try about({roundedActual}, 1e-{self.precision()})", Logger.LevelError)
+            diffPct = pctString(expected, actual)
+            roundedActual = roundPrecision(self.precision(), actual)
+
+        # if isinstance(actual, list):
+        #     diffPct = [f"{round(abs((actual[i] - expected[i]) / actual[i]) * 100, 2)}%" for i in range(len(actual))]
+        # else:
+        #     diffPct = f"{round(abs((actual - expected) / actual) * 100, 2)}%"
+        self.log(f"{expected} was expected but actual is {actual} {diffPct}. Try about({roundedActual}, 1e-{self.precision()})", Logger.LevelError)
         return self.always()
 
     def __torch_function__(cls, func, types, args=(), kwargs=None):
@@ -92,7 +112,7 @@ class About(SObject):
         return f"{self.expected()}"
 
 about = approx
-about = About().always(true_)
+about = About().always(true_)   # can be set in mid of debugging
 about = About()
 
 # env['SKIPHACK'] = '1'
@@ -204,18 +224,21 @@ class Test_Projector(TestCase):
         projection2 = pj2.projection()
 
         # assert projection2.varianceRatio() == about([0.01985565, 0.01102482, 0.00954412], 1e-3)
-        assert projection2.varianceRatio() == about([0.01985, 0.01102, 0.009544], 1e-3)
-
+        # assert projection2.varianceRatio() == about([0.01985, 0.01102, 0.009544], 1e-3)
+        assert projection2.varianceRatio() == about([0.01811, 0.008229, 0.007154], 1e-3)
         tokenSpec = modelNP.searchTokens('Token').head()
         codeToken = tokenSpec['id']
         assert 30642 == codeToken
         vector2 = tokenSpec['vector']
         assert vector2[0] == about(0.01596, 1e-3)
 
-        projected2 = projection2.project(vector2)
-        assert projected2[0][0] == about(-4.2811, 1e-3)
-        assert projected2[0][1] == about(3.52, 1e-3)
-        assert projected2[0][2] == about(0.335, 1e-3)
+        projected2 = projection2.projectVector(vector2)
+        # assert projected2[0][0] == about(-4.2811, 1e-3)
+        # assert projected2[0][1] == about(3.52, 1e-3)
+        # assert projected2[0][2] == about(0.335, 1e-3)
+        assert projected2[0][0] == about(0.01334, 1e-3)
+        assert projected2[0][1] == about(0.007604, 1e-3)
+        assert projected2[0][2] == about(-0.01539, 1e-3)
         return
 
     @skipIf('SKIP' in env, reason="disabled")
@@ -235,7 +258,7 @@ class Test_Projector(TestCase):
         vector = tokenSpec['vector']
         assert vector[0] == about(0.01596, 1e-3)
 
-        projected = projection.project(vector)
+        projected = projection.projectVector(vector)
         # assert 4.281162738800049 == projected[0][0]
         # assert -3.5077905654907227 == approx(projected[0][1], 1e-6)
         # assert 0.3020952641963959 == approx(projected[0][2], 1e-6)
@@ -251,9 +274,11 @@ class Test_Projector(TestCase):
         pj.showEmbedding()
 
     @skipIf('SKIP' in env, reason="disabled")
-    def test410_zero(self):
+    def test410_zero_cos(self):
         model = self.model
         pj = Projector().name('projector').model(model).loadFile()
+        similarity = CosineSimilarity()
+        pj.similarity(similarity)
 
         # Project Zero
         zeros = pj.newTrace().fromVectors(0)
@@ -263,8 +288,8 @@ class Test_Projector(TestCase):
         assert zeros.projected()[0] == about([1.37, -0.0445, -0.129], 1e-3)
         words = zeros.closestWords()
         assert zeros.closestIndices().tolist() == [[379]]
-        assert zeros.knn_ids().tolist() == [[379]]
-        assert zeros.knn_sims().squeeze().item() == about(1, 1e-4)
+        assert zeros.similarity().ids().tolist() == [[379]]
+        assert zeros.similarity().sims().squeeze().item() == about(1, 1e-4)
         assert zeros.closestAngles().squeeze().item() == about(0.028, 1e-4)
             # fp32 precision issues
         assert words == ['\u2588at']
@@ -272,11 +297,11 @@ class Test_Projector(TestCase):
         zeros.asDF()
 
         # Project 5 neigbhours around zero
-        ids = zeros.knn(5).knn_ids()
+        ids = zeros.similarity().k(5).knn(zeros.vectors()).ids()
         zeroKNN = pj.newTrace().fromIndices(ids)
         assert zeroKNN.asDF().shape == (5,8)
-        assert zeroKNN.knn_ids().squeeze().tolist() == [379, 287, 319, 281, 329]
-        assert zeroKNN.knn_sims().squeeze().tolist() == about([1, 1, 1, 1, 1], 1e-4)
+        assert zeroKNN.similarity().ids().squeeze().tolist() == [379, 287, 319, 281, 329]
+        assert zeroKNN.similarity().sims().squeeze().tolist() == about([1, 1, 1, 1, 1], 1e-4)
         assert zeroKNN.closestAngles().squeeze().tolist() == about([0.0485, 0.0593, 0.0442, 0., 0.], 1e-4)
             # fp32 precision issues
         words = zeroKNN.closestWords()
@@ -284,7 +309,94 @@ class Test_Projector(TestCase):
         assert zeroKNN.asDF()['word'].tolist() == ['\u2588at', '\u2588in', '\u2588on', '\u2588an', '\u2588for']
 
     @skipIf('SKIP' in env, reason="disabled")
-    def test420_trace(self):
+    def test420_zero_logit(self):
+        model = self.model
+        pj = Projector().name('projector').model(model).loadFile()
+
+        # Project Zero
+        zeros = pj.newTrace().fromVectors(0)
+        assert zeros.projected()[0] == about([1.37, -0.0445, -0.129], 1e-3)
+        words = zeros.closestWords()
+        assert zeros.closestIndices().tolist() == [[379]]
+        assert zeros.similarity().ids().tolist() == [[379]]
+        assert zeros.similarity().sims().squeeze().item() == about(6.021, 1e-4)
+        assert zeros.closestAngles().squeeze().item() == about(0.0396, 1e-3)
+            # fp32 precision issues
+        assert words == ['\u2588at']
+        assert zeros.asDF().shape == (1,8)
+        zeros.asDF()
+
+        # Project 5 neigbhours around zero
+        ids = zeros.similarity().k(5).knn(zeros.vectors()).ids()
+        zeroKNN = pj.newTrace().fromIndices(ids)
+        assert zeroKNN.asDF().shape == (5,8)
+        assert zeroKNN.similarity().ids().squeeze().tolist() ==about([287, 319, 329, 379, 11])
+        assert zeroKNN.similarity().sims().squeeze().tolist() == about([6.074, 6.114, 6.182, 6.021, 9.472], 1e-3)
+        assert zeroKNN.closestAngles().squeeze().tolist() == about([0.0593, 38.94, 44.55, 43.07, 50.1], 1e-3)
+            # fp32 precision issues
+        words = zeroKNN.closestWords()
+        assert words == ['\u2588in', '\u2588on', '\u2588for', '\u2588at', ',']
+        assert zeroKNN.asDF()['word'].tolist() == ['\u2588in', '\u2588on', '\u2588for', '\u2588at', ',']
+
+    @skipIf('SKIP' in env, reason="disabled")
+    def test430_trace_cos(self):
+        model = self.model
+        pj = Projector().name('projector').model(model).loadFile()
+        similarity = CosineSimilarity()
+        pj.similarity(similarity)
+
+        # knn for all 4 vectors
+        trace = pj.newTrace().fromPrompt("Allen Turing theorized")
+        vectors = trace.vectors()
+        trace1 = pj.newTrace().fromVectors(vectors)
+        # trace1.similarity().k(5).knn(vectors)
+        trace1.knn(5)
+        ids = trace1.similarity().ids()
+        sims = trace1.similarity().sims()
+        assert ids.shape == (4,5)
+        assert sims.shape == (4,5)
+        words = trace1.closestWords()
+        assert words == ['Allen', '\u2588Turing', '\u2588theor', 'ized']
+        words = trace1.closestWords(dim=1)
+        assert words == ['Allen', '\u2588Allen', '\x16', '\\xf7', '\\xfb']
+        trace1.asDF()
+
+        ids1 = trace1.similarity().ids()[0,:]
+        assert ids1 == about([39989, 9659, 210, 179, 183])
+        sims1 = trace1.similarity().sims()[0,:]
+        assert sims1 == about([1.0, 0.7447, 0.5195, 0.5187, 0.5185], 1e-3)
+        angles1 = trace1.similarity().angles()[0,:]
+        knn1 = pj.newTrace().fromIndices(ids1).knn_ids(ids1).knn_sims(sims1).knn_angles(angles1)
+        assert knn1.asDF()['word'].tolist() == ['Allen', '\u2588Allen', '\x16', '\\xf7', '\\xfb']
+
+        # knn on 2nd vectors i.e. 'Turing'
+        trace2 = pj.newTrace().fromVectors(vectors[1])
+        # trace2.similarity().k(5).knn(vectors[1])
+        trace2.knn(5)
+        words = trace2.closestWords()
+        assert words == ['\u2588Turing']
+        words = trace2.closestWords(dim = 1)
+        assert words == ['\u2588Turing', '\u2588externalToEVA', '\u2588', '\\xff', '\u2588']
+
+        knn2 = pj.newTrace().fromIndices(trace2.similarity().ids())
+        assert knn2.asDF()['word'].tolist() == ['\u2588Turing', '\u2588externalToEVA', '\u2588', '\\xff', '\u2588']
+
+        # knn on 3rd vectors i.e. 'theor'
+        trace3 = pj.newTrace().fromVectors(vectors[2])
+        # trace3.similarity().k(5).knn(vectors[2])
+        trace3.knn(5)
+        words = trace3.closestWords()
+        assert words == ['\u2588theor']
+        words = trace3.closestWords(dim = 1)
+        assert words == ['\u2588theor', '\u2588hypothes', '\u2588hypothesized', '\u2588speculated', '\u2588theories']
+
+        knn3 = pj.newTrace().fromIndices(trace3.similarity().ids())
+        assert knn3.asDF()['word'].tolist() == ['\u2588theor', '\u2588hypothes', '\u2588hypothesized', '\u2588speculated', '\u2588theories']
+
+        return
+
+    @skipIf('SKIP' in env, reason="disabled")
+    def test440_trace_logit(self):
         model = self.model
         pj = Projector().name('projector').model(model).loadFile()
 
@@ -293,17 +405,23 @@ class Test_Projector(TestCase):
         vectors = trace.vectors()
         trace1 = pj.newTrace().fromVectors(vectors)
         trace1.knn(5)
-        ids = trace1.knn_ids()
-        sims = trace1.knn_sims()
+        ids = trace1.similarity().ids()
+        sims = trace1.similarity().sims()
         assert ids.shape == (4,5)
         assert sims.shape == (4,5)
         words = trace1.closestWords()
         assert words == ['Allen', '\u2588Turing', '\u2588theor', 'ized']
         words = trace1.closestWords(dim=1)
-        assert words == ['Allen', '\u2588Allen', '\x16', '\\xf7', '\\xfb']
+        assert words == ['Allen', '\u2588Allen', 'Adams', 'sonian', 'Murray']
+        trace1.asDF()
 
-        knn1 = pj.newTrace().fromIndices(trace1.knn_ids()[0,:])
-        assert knn1.asDF()['word'].tolist() == ['Allen', '\u2588Allen', '\x16', '\\xf7', '\\xfb']
+        ids1 = trace1.similarity().ids()[0,:]
+        assert ids1 == about([39989, 9659, 47462, 35202, 49998])
+        sims1 = trace1.similarity().sims()[0,:]
+        assert sims1 == about([16.89, 10.6, 8.722, 8.604, 8.581], 1e-3)
+        angles1 = trace1.similarity().angles()[0,:]
+        knn1 = pj.newTrace().fromIndices(ids1).knn_ids(ids1).knn_sims(sims1).knn_angles(angles1)
+        assert knn1.asDF()['word'].tolist() == ['Allen', '\u2588Allen', 'Adams', 'sonian', 'Murray']
 
         # knn on 2nd vectors i.e. 'Turing'
         trace2 = pj.newTrace().fromVectors(vectors[1])
@@ -311,10 +429,10 @@ class Test_Projector(TestCase):
         words = trace2.closestWords()
         assert words == ['\u2588Turing']
         words = trace2.closestWords(dim = 1)
-        assert words == ['\u2588Turing', '\u2588externalToEVA', '\u2588', '\\xff', '\u2588']
+        assert words == ['\u2588Turing', 'ertodd', 'isSpecialOrderable', '\u2588mathemat', '\u2588Canaver']
 
-        knn2 = pj.newTrace().fromIndices(trace2.knn_ids())
-        assert knn2.asDF()['word'].tolist() == ['\u2588Turing', '\u2588externalToEVA', '\u2588', '\\xff', '\u2588']
+        knn2 = pj.newTrace().fromIndices(trace2.similarity().ids())
+        assert knn2.asDF()['word'].tolist() == ['\u2588Turing', 'ertodd', 'isSpecialOrderable', '\u2588mathemat', '\u2588Canaver']
 
         # knn on 3rd vectors i.e. 'theor'
         trace3 = pj.newTrace().fromVectors(vectors[2])
@@ -322,15 +440,15 @@ class Test_Projector(TestCase):
         words = trace3.closestWords()
         assert words == ['\u2588theor']
         words = trace3.closestWords(dim = 1)
-        assert words == ['\u2588theor', '\u2588hypothes', '\u2588hypothesized', '\u2588speculated', '\u2588theories']
+        assert words == ['\u2588theor', '\u2588hypothes', '\u2588hypothesized', '\u2588mathemat', '\u2588speculate']
 
-        knn3 = pj.newTrace().fromIndices(trace3.knn_ids())
-        assert knn3.asDF()['word'].tolist() == ['\u2588theor', '\u2588hypothes', '\u2588hypothesized', '\u2588speculated', '\u2588theories']
+        knn3 = pj.newTrace().fromIndices(trace3.similarity().ids())
+        assert knn3.asDF()['word'].tolist() == ['\u2588theor', '\u2588hypothes', '\u2588hypothesized', '\u2588mathemat', '\u2588speculate']
 
         return
 
     @skipIf('SKIP' in env, reason="disabled")
-    def test430_show(self):
+    def test450_show(self):
         model = self.model
         pj = Projector().name('projector').model(model).loadFile()
 
@@ -341,6 +459,9 @@ class Test_Projector(TestCase):
         assert len(pj.figure().data) == 1
         trace.remove()
         assert len(pj.figure().data) == 0
+        trace.asDF()
+
+        origin = pj.newTrace().name('origin').fromVectors(0).color('black').show()
 
         # simulate the highlight
         tokenVec = trace.vectors()[1]

@@ -27,7 +27,7 @@ import tensorflow as tf
 from smallscript import *
 from .GPT2Operator import GPT2Operator
 from .GPT2EncoderNP import get_encoder
-from .Projection import Projection
+from .Projection import GPT2ProjectionNP
 
 # GPT2 Adaptor using Numpy
 class GPT2OperatorNP(GPT2Operator):
@@ -125,34 +125,40 @@ class GPT2OperatorNP(GPT2Operator):
         vocabs = self._words(labels, byte_decoder, replacement)
         return vocabs
 
-    def projectVector(self, projection, vectors):
-        if isinstance(vectors, list):
-            if isinstance(vectors[0], list):  # List of vectors (list of lists)
-                vectors = np.array(vectors)
-            else:  # Single vector in list
-                vectors = np.array(vectors).reshape(1, -1)
-        elif isinstance(vectors, np.ndarray) and vectors.ndim == 1:  # Single vector (1D array)
-            vectors = vectors.reshape(1, -1)
-        mean = projection.mean()
-        std = projection.std()
-        z = (vectors - mean)/std
-        components = projection.components()
-        projected = np.dot(z, components.T)
-        return projected
+    # def projectVector(self, projection, vectors):
+    #     if isinstance(vectors, list):
+    #         if isinstance(vectors[0], list):  # List of vectors (list of lists)
+    #             vectors = np.array(vectors)
+    #         else:  # Single vector in list
+    #             vectors = np.array(vectors).reshape(1, -1)
+    #     elif isinstance(vectors, np.ndarray) and vectors.ndim == 1:  # Single vector (1D array)
+    #         vectors = vectors.reshape(1, -1)
+    #     mean = projection.mean()
+    #     std = projection.std()
+    #     z = (vectors - mean)/std
+    #     components = projection.components()
+    #     projected = np.dot(z, components.T)
+    #     return projected
 
-    def project(self, matrix, ndim=3):
-        scaler = StandardScaler()
-        scaled = scaler.fit_transform(matrix)
-        svd = TruncatedSVD(n_components=ndim, random_state=42)  # minimize randomness for tests
-        projected = svd.fit_transform(scaled)
-        mean = scaler.mean_
-        std = scaler.scale_
-        components = svd.components_
-        emptyModel = self.createEmpty()    # visitor.projectVector()
-        projection = Projection().emptyModel(emptyModel).projected(projected).components(components).mean(mean).std(std)
-        variance_ratio = svd.explained_variance_ratio_
-        projection.varianceRatio(variance_ratio)
+    def projectMatrix(self, matrix, ndim=3):
+        emptyModel = self.createEmpty()         # visitor.projectVector()
+        projection = GPT2ProjectionNP().emptyModel(emptyModel)
+        projection.projectMatrix(matrix, ndim=3)
         return projection
+
+    # def projectMatrix1(self, matrix, ndim=3):
+    #     scaler = StandardScaler()
+    #     scaled = scaler.fit_transform(matrix)
+    #     svd = TruncatedSVD(n_components=ndim, random_state=42)  # minimize randomness for tests
+    #     projected = svd.fit_transform(scaled)
+    #     mean = scaler.mean_
+    #     std = scaler.scale_
+    #     components = svd.components_
+    #     emptyModel = self.createEmpty()    # visitor.projectVector()
+    #     projection = Projection().emptyModel(emptyModel).projected(projected).components(components).mean(mean).std(std)
+    #     variance_ratio = svd.explained_variance_ratio_
+    #     projection.varianceRatio(variance_ratio)
+    #     return projection
 
     def closestWords(self, vector, nwords=1):
         wte = self.findParamBySpecs('wte')
