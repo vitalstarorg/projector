@@ -27,6 +27,7 @@ class GPT2Inference(SObject):
     argmax = Holder().name('argmax')
     generation = Holder().name('generation')
 
+    #### Attributes
     def prompt(self, prompt=''):
         prompt = self.asSObj(prompt)
         res = self._getOrSet('prompt', prompt, nil)
@@ -39,11 +40,34 @@ class GPT2Inference(SObject):
         inputs = self.asSObj(inputs)
         res = self._getOrSet('inputs', inputs, nil)
         if inputs == "": return res
+        self.reset()
+        return self
+
+    #### Helper
+    def reset(self):
+        inputs = self.inputs()
+        if inputs.isNil(): return self
         zeros = self.model().zeros(inputs.len(), self.nembd())
         self.x(zeros)
         self.delta(zeros)
         return self
 
+    def indices(self):
+        return self.inputs()
+
+    def tokens(self):
+        indices = self.inputs()
+        tokens = self.model().tokens().keys()
+        tokenList = [tokens[index] for index in indices]
+        return List(tokenList)
+
+    def words(self):
+        indices = self.inputs()
+        words = self.model().words()
+        wordsList = [words[index] for index in indices]
+        return List(wordsList)
+
+    #### Main methods
     def add2inputs(self):
         inputs = self.inputs()
         inputs.append(self.argmax()[-1].item())
@@ -113,7 +137,8 @@ class GPT2Inference(SObject):
     def layer(self, blkn):
         self.\
             lnorm1(blkn).\
-            attn(blkn).sum().\
+            attn(blkn).\
+            sum().\
             lnorm2(blkn).\
             ffn(blkn).\
             sum()
@@ -125,7 +150,8 @@ class GPT2Inference(SObject):
         w = model.modelParams().getValue('ln_f.w')
         b = model.modelParams().getValue('ln_f.b')
         x10 = model.layerNorm(self.x(), w, b)
-        self.x(x10)
+        self.delta(x10)
+        # self.x(x10)
 
         # logits
         wte = model.modelParams().getValue('wte')

@@ -40,13 +40,18 @@ class Projector(SObject):
     projection = Holder().name('projection')
     console = Holder().name('console')
     figure = Holder().name('figure')
-    colorRoll = Holder().name('colorRoll').type('ColorRoll')
+    view = Holder().name('view')
+    colorShape = Holder().name('colorShape').type('ColorShape')
     traces = Holder().name('traces').type('Map')
+    selectedTrace = Holder().name('selectedTrace')
+    selectedIdx = Holder().name('selectedIdx')
+    selectedVector = Holder().name('selectedVector')
     highlight = Holder().name('highlight')
 
     def __init__(self):
         self.console(ipywidgets.Output())
         self.figure(go.FigureWidget())
+        self.view(View())
 
     def filename(self, filename=""):
         if filename == "":
@@ -109,7 +114,7 @@ class Projector(SObject):
         return self
 
     #### Projection matrix operations
-    def project(self, dim=3):       # here ....
+    def project(self, dim=3):
         projection = self.projection()
         if projection is nil:
             wte = self.model().modelParams().getValue('wte')
@@ -124,7 +129,6 @@ class Projector(SObject):
     def projectVector(self, vectors):
         projection = self.project()
         model = self.model()
-        # projected = model.projectVector(projection, vectors)
         projected = projection.projectVector(vectors)
         return projected
 
@@ -148,12 +152,13 @@ class Projector(SObject):
         knn_sims = tokenTrace.knn_sims()
         knn_angles = tokenTrace.knn_angles()
         highlight = self.newTrace().\
+                            name('highlight').\
                             fromIndices(knn_ids).\
                             knn_ids(knn_ids).\
                             knn_sims(knn_sims).\
                             knn_angles(knn_angles).\
-                            colorRoll(ColorRoll())
-        highlight.colorRoll().color('blue')
+                            colorShape(ColorShape())
+        highlight.colorShape().color('blue')
         self.highlight(highlight)
         return highlight
 
@@ -162,21 +167,58 @@ class Projector(SObject):
             return
         self.console().outputs = ()
         idx = points.point_inds[0]
+        self.selectedIdx(idx)
         with self.console():
             k = 10
             print(f"{datetime.now()} {plytrace.name}[{idx}]")
             trace = self.traces().getValue(plytrace.name)
             tokenVec = trace.vectors()[idx]
+            self.selectedTrace(trace)
+            self.selectedVector(tokenVec)
             highlight = self.updateHighlight(tokenVec, k)
             df = highlight.asDF()
             print(df)
             highlight.show()
+
+    def getColorShape(self): return self.colorShape().clone()
+
+    def getView(self):
+        view = self.view()
+        scene = self.figure().layout.scene
+        xlimits = scene.xaxis.range
+        view.xlimits(xlimits)
+        ylimits = scene.yaxis.range
+        view.ylimits(ylimits)
+        zlimits = scene.zaxis.range
+        view.zlimits(zlimits)
+        if hasattr(scene, 'aspectmode'):
+            aspectmode = getattr(scene, 'aspectmode')
+            view.aspectmode(aspectmode)
+        return view
+
+    def updateView(self, view=nil):
+        if view is not nil:
+            self.view(view)
+        else:
+            view = self.view()
+        figwidget = self.figure()
+        scene = view.asMap()
+        figwidget.update_layout(scene=scene)
+        return self
+
+    def resetView(self):
+        self.view(View())
+        self.updateView()
+        return self
+
+    def nextColor(self): self.colorShape().next(); return self
 
     def showEmbedding(self):
         def on_click2(trace, points, selector):
             with self.console():
                 print(datetime.now())
 
+        scene = self.view().asMap()
         if len(self.figure().data) == 0:
             figwidget = self.figure()
             df = self.projection().df()
@@ -190,6 +232,7 @@ class Projector(SObject):
             figwidget.add_trace(fig.data[0])
             figwidget.update_layout(
                 height=800, width=1000,
+                scene=scene,
                 paper_bgcolor='rgba(0,0,0,0)',
                 plot_bgcolor='rgba(0,0,0,0)',
                 showlegend=False,
@@ -258,11 +301,13 @@ class Projector(SObject):
         self.console().append_stdout(text)
         return self
 
-    def cleanAll(self):
+    def clearAll(self):
+        self.clearTraces()
         self.figure().data = ()
         return self
 
     def clearTraces(self):
+        self.colorShape().reset()
         for trace in self.traces().values():
             self.removeTrace(trace)
         return self
@@ -274,8 +319,8 @@ class Projector(SObject):
                     projection(projection).\
                     similarity(self.similarity().copy()).\
                     inference(inference).\
-                    colorRoll(self.colorRoll())
-                    # colorRoll(ColorRoll().reset(self.colorRoll().coloridx()))
+                    colorShape(self.colorShape().clone())
+        # self.colorShape().next()
         return trace
 
     def showTrace(self, trace):
@@ -283,7 +328,6 @@ class Projector(SObject):
         self.traces().setValue(trace.name(), trace)
         scatter = trace.scatter()
         self.figure().add_trace(scatter)
-        # self.figure().data[-1].on_click(self.onClick)
         addedScatter = List(self.figure().select_traces(selector={'name': trace.name()}))[-1]
         addedScatter.on_click(self.onClick)
         return self
@@ -297,28 +341,65 @@ class Projector(SObject):
             self.figure().data = tuple(traces)
         return self
 
-class ColorRoll(SObject):
+class View(SObject):
+    xlimits = Holder().name('xlimits')
+    ylimits = Holder().name('ylimits')
+    zlimits = Holder().name('zlimits')
+    aspectmode = Holder().name('aspectmode')
+
+    def asMap(self):
+        scene = Map()
+        aspectmode = self.aspectmode()
+        if aspectmode is nil:
+            aspectmode = 'auto'
+        scene['aspectmode'] = aspectmode
+        if self.xlimits() is not nil:
+            scene['xaxis'] = dict(range=self.xlimits(), autorange=False)
+            scene['yaxis'] = dict(range=self.ylimits(), autorange=False)
+            scene['zaxis'] = dict(range=self.zlimits(), autorange=False)
+        else:
+            scene['xaxis'] = None
+            scene['yaxis'] = None
+            scene['zaxis'] = None
+        return scene
+
+class ColorShape(SObject):
     color = Holder().name('color')
     colors = Holder().name('colors')
-    coloridx= Holder().name('coloridx')
+    coloridx = Holder().name('coloridx')
+    size = Holder().name('size')
 
     def __init__(self):
         self.colors(List(px.colors.qualitative.Alphabet_r))
         self.reset()
 
-    def next(self):
-        color = self.color()
-        colors = self.colors()
-        coloridx = self.coloridx() % colors.len()
-        next = colors[coloridx]
-        self.coloridx(coloridx + 1)
-        self.color(next)
-        return color
+    def shape(self, shape=""):
+        if shape == '': return self.getValue('shape')
+        shapes = List(["circle", "square", "diamond", "cross", "x", "diamond-open", "square-open", 'circle-open'])
+        criteria = shape.split(' ')
+        for criterion in criteria:
+            shapes = List([s for s in shapes if criterion in s])
+        if shapes.len() > 0:
+            first = shapes.head()
+            self.setValue('shape', first)
+        return self
 
     def reset(self, coloridx=0):
         self.coloridx(coloridx)
         color = self.colors()[coloridx]
         self.color(color)
+        self.shape('circle')
+        self.size(15)
+        return self
+
+    def next(self):
+        color = self.color()
+        colors = self.colors()
+        coloridx = self.coloridx() + 1
+        coloridx = coloridx % colors.len()
+        next = colors[coloridx]
+        self.coloridx(coloridx)
+        self.color(next)
         return self
 
 class Trace(SObject):
@@ -328,7 +409,7 @@ class Trace(SObject):
     prompt = Holder().name('prompt')
     vectors = Holder().name('vectors')          # full scale vectors
     projected = Holder().name('projected')      # projected vectors
-    colorRoll = Holder().name('colorRoll')
+    colorShape = Holder().name('colorShape')
     knn_sims = Holder().name('knn_sims')        # knn similarity to WTE
     knn_ids = Holder().name('knn_ids')          # knn Ids to tokens
     knn_angles = Holder().name('knn_angles')    # knn angles
@@ -377,7 +458,6 @@ class Trace(SObject):
         projector = self.projector()
         projection = self.projection()
         if vectors is 0:
-            # n_embd = projector.model().modelParams().getAsNumber('n_embd')
             n_embd = projector.model().modelParams().getValue('n_embd')
             vectors = torch.zeros(n_embd)
         vectors = self._vectors(vectors)
@@ -393,7 +473,6 @@ class Trace(SObject):
         indices = self.knn_ids()
         if indices is nil:
             indices = self.knn(1).knn_ids()
-        # indices = self.similarity().k(1).knn(vectors).ids()
         if indices.dim() == 1:
             indices = indices.tolist()
             angles = self.knn_angles().tolist()
@@ -421,32 +500,14 @@ class Trace(SObject):
         df['norm'] = self.vectors().norm(dim=1)
         return df
 
-    def knn(self, k=1):
+    def knn(self, k=0):
         vectors = self.vectors()
-        self.similarity().k(k).knn(vectors)
+        if k != 0: self.similarity().k(k)
+        self.similarity().knn(vectors)      # if k is not supplied, use similarity() default.
         self.knn_sims(self.similarity().sims())
         self.knn_ids(self.similarity().ids())
         self.knn_angles(self.similarity().angles())
         return self
-        # projector = self.projector()
-        # vectors = self.vectors()
-        # wte = projector.model().modelParams()['wte']
-        # vnorms = vectors.norm(dim=1, keepdim=True)
-        # wnorms = wte.norm(dim=1, keepdim=True)
-        # if vnorms.shape == (1,1) and vnorms == 0:      # zero vector
-        #     norms, indices = torch.topk(wnorms.T, k, largest=False)
-        #     vecs = wte[indices[0,:]] / wnorms[indices[0,:]]
-        #     average = vecs.mean(dim=0, keepdim=True)
-        #     naverage = average / average.norm()
-        #     maxSim = torch.mm(vecs, naverage.T)
-        # else:
-        #     vectors = vectors / torch.where(vnorms == 0, torch.ones_like(vnorms), vnorms)
-        #     wte = wte / torch.where(wnorms == 0, torch.ones_like(wnorms), wnorms)
-        #     sim = torch.mm(vectors, wte.T)
-        #     maxSim, indices = torch.topk(sim, k, dim=1)
-        # self.knn_sims(maxSim)
-        # self.knn_ids(indices)
-        # return self
 
     def closestAngles(self, k=1):
         angles = self.knn_angles()
@@ -475,8 +536,8 @@ class Trace(SObject):
         trace_name = self.name()
         df = self.asDF()
         n = df.shape[0]
-        colorIdx = self.colorRoll().coloridx()
-        color = self.colorRoll().next()
+        colorIdx = self.colorShape().coloridx()
+        color = self.colorShape().color()
         template = "%{hovertext}<br>trace='" + trace_name + "'<br>x=%{x}<br>y=%{y}<br>z=%{z}<extra>%{text}</extra>"
         template = '%{hovertext}<br>idx=%{text}<br>colorIdx=' + str(colorIdx) + '<br>trace=' + trace_name + '<extra></extra>'
         scatter = go.Scatter3d(x=df['x'], y=df['y'], z=df['z'],
@@ -485,19 +546,77 @@ class Trace(SObject):
                                text=df['text'],
                                hovertext=df['word'],
                                hovertemplate=template)
-        scatter.marker.color = [color] * n
-        scatter.marker.size = [15] * n
-        scatter.marker.opacity = 0.8
+        scatter.marker = dict(
+            color = [color] * n,
+            size=[self.colorShape().size().value()] * n,
+            opacity=0.8,
+            symbol=self.colorShape().shape()
+        )
         return scatter
 
+    def nextColor(self):
+        self.colorShape().next()
+        return self
+
     def color(self, color):
-        self.colorRoll().color(color)
+        self.colorShape().color(color)
+        return self
+
+    def shape(self, shape):
+        self.colorShape().shape(shape)
+        return self
+
+    def size(self, size):
+        self.colorShape().size(size)
         return self
 
     def show(self):
         self.projector().showTrace(self)
         return self
 
+    def showDF(self, precision=4):
+        from ipyaggrid import Grid
+        grid_options = {
+            'defaultColDef': {
+                'sortable': True,
+                'resizable': True,
+                'valueFormatter': f"x % 1 !== 0 ? x.toFixed({precision}) : Math.floor(x)",
+                # 'valueFormatter': 'x.toFixed(2)',
+            }
+        }
+        df = self.asDF()
+        grid = Grid(grid_data=df
+                    , theme='ag-theme-blue'
+                    , index=True
+                    , columns_fit='auto'
+                    , grid_options=grid_options)
+                    # , quick_filter=True)
+        return grid
+
     def remove(self):
         self.projector().removeTrace(self)
         return self
+
+    def indices(self):
+        ids = self.knn_ids()
+        if ids is nil:
+            self.knn()
+            ids = self.knn_ids()
+        ids = self._vectors(ids)
+        ids = ids[:,0]
+        indices = ids.squeeze().tolist()
+        return List(indices)
+
+    def tokens(self):
+        indices = self.indices()
+        model = self.projector().model()
+        tokens = model.tokens().keys()
+        tokenList = [tokens[index] for index in indices]
+        return List(tokenList)
+
+    def words(self):
+        indices = self.indices()
+        model = self.projector().model()
+        words = model.words()
+        wordsList = [words[index] for index in indices]
+        return List(wordsList)

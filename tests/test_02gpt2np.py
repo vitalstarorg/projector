@@ -49,7 +49,7 @@ class Test_GPT2NP(TestCase):
 
     @skipIf('SKIP' in env, reason="disabled")
     def test110_load_model(self):
-        smodel = GPT2OperatorNP().name("gpt2/124M").loadModel()
+        smodel = GPT2OperatorNP().name("gpt2-chkpt").loadModel()
         self.__class__.smodel = smodel
         assert len(smodel.blockParams().keys()) > 0
 

@@ -53,8 +53,10 @@ class Similarity(SObject):
         vnorms = vectors.norm(dim=1, keepdim=True)
         vectors = vectors / torch.where(vnorms == 0, torch.ones_like(vnorms), vnorms)
         wte = wte / torch.where(wnorms == 0, torch.ones_like(wnorms), wnorms)
-        sim = torch.mm(vectors, wte.T)
-        degrees = self.degrees(sim).flatten()[indices]
+        # sim = torch.mm(vectors, wte.T)
+        # degrees = self.degrees(sim).flatten()[indices]
+        sim = torch.mm(vectors, wte.T).gather(1, indices)
+        degrees = self.degrees(sim)
         self.angles(degrees)
         return self
 
@@ -69,7 +71,7 @@ class CosineSimilarity(Similarity):
             average = vecs.mean(dim=0, keepdim=True)
             naverage = average / average.norm()
             maxSim = torch.mm(vecs, naverage.T)
-            degrees = self.degrees(maxSim)
+            degrees = self.degrees(maxSim).flatten()
         else:
             vectors = vectors / torch.where(vnorms == 0, torch.ones_like(vnorms), vnorms)
             wte = wte / torch.where(wnorms == 0, torch.ones_like(wnorms), wnorms)

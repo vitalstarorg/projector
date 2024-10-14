@@ -29,6 +29,7 @@ import json
 import difflib
 
 class GPT2Operator(SObject):
+    org = Holder().name('org').type('String')
     state = Holder().name('state')
     tokenizer = Holder().name('tokenizer')
     config = Holder().name('config')
@@ -110,7 +111,11 @@ class GPT2Operator(SObject):
             self.log(f"env LLM_MODEL_PATH not set.", Logger.LevelError)
             return nil
         llmModelPath = Path(env['LLM_MODEL_PATH'])
-        path = Path.home() / llmModelPath / modelname
+        org = self.org()
+        if org.isEmpty():
+            path = Path.home() / llmModelPath / modelname
+        else:
+            path = Path.home() / llmModelPath / org / modelname
         return path
 
     def loadEnv(self, dotEnv='.env'):
@@ -125,22 +130,64 @@ class GPT2Operator(SObject):
             if path == home: break
         return self
 
+    def saveModel(self):
+        self.loadEnv()
+        modelpath = self.path()
+        if modelpath is nil: return nil
+        if modelpath is not nil and modelpath.exists():
+            self.log(f"Failed to save model files under {modelpath} as it is already exists.")
+            return nil
+        modelpath.mkdir(parents=True, exist_ok=True)
+        self.model().save_pretrained(modelpath)
+        self.tokenizer().save_pretrained(modelpath)
+        return self
+
+    def deleteModel(self):
+        import shutil
+        self.loadEnv()
+        modelpath = self.path()
+        if modelpath is nil: return nil
+        if modelpath.exists() and modelpath.is_dir():
+            shutil.rmtree(modelpath)
+            self.log(f"Deleted model files under {modelpath}.", Logger.LevelWarning)
+        return self
+
+    def downloadModel(self, modelname=""):
+        from transformers import AutoModel, AutoTokenizer
+        self.loadEnv()
+        hfID = self.name()
+        if modelname != "":
+            self.name(modelname)
+            hfID = modelname
+        if self.org().notEmpty():
+            hfID = f"{self.org()}/{hfID}"
+        model = AutoModel.from_pretrained(hfID)
+        config = Map(model.config.to_dict())
+        tokenizer = AutoTokenizer.from_pretrained(hfID)
+        self.model(model).config(config).tokenizer(tokenizer).readParams()
+
+        # Should read from vocab.json
+        byte_encoder = bytes_to_unicode()
+        byte_decoder = {v: k for k, v in byte_encoder.items()}
+        self.byte_decoder(byte_decoder)
+        return self
+
     def loadModel(self, modelname=""):
         self.loadEnv()
         if modelname != "":
             self.name(modelname)
         modelpath = self.path(modelname)
-        if modelpath == nil: return nil
+        if modelpath is nil: return nil
         model = AutoModelWithLMHead.from_pretrained(modelpath)
         tokenizer = AutoTokenizer.from_pretrained(modelpath)
         config = Map(PretrainedConfig.get_config_dict(modelpath)[0])
         self.model(model).config(config).tokenizer(tokenizer).readParams()
 
         # Direct preprocessing vocab.json to bypass expensive tokenizer.decode() in words()
-        with open(modelpath / 'vocab.json', "r") as f:
-            byte_encoder = bytes_to_unicode()
-            byte_decoder = {v: k for k, v in byte_encoder.items()}
-            self.byte_decoder(byte_decoder)
+        # with open(modelpath / 'vocab.json', "r") as f:
+        byte_encoder = bytes_to_unicode()
+        byte_decoder = {v: k for k, v in byte_encoder.items()}
+        self.byte_decoder(byte_decoder)
         return self
 
     def searchTokens(self, spelling, n = 5):
@@ -160,16 +207,25 @@ class GPT2Operator(SObject):
         return Map(token_to_index)
 
     def _words(self, labels, byte_decoder, replacement):
+        def gpt2UnicodeConvert(token):
+            array = []
+            for c in token:
+                if c not in byte_decoder:
+                    array.append(ord(c))
+                else:
+                    array.append(byte_decoder[c])
+            word = bytearray(array).decode('utf-8', errors="backslashreplace")
+            return word
+
         whitespace = r"^\s{1}"
         vocabs = List()
         if replacement == '':
             for token in labels:
-                word = bytearray([byte_decoder[c] for c in token]).decode("utf-8", errors="backslashreplace")
+                word = gpt2UnicodeConvert(token)
                 vocabs.append(word)
         else:
             for token in labels:
-                word = bytearray([byte_decoder[c] for c in token]).decode("utf-8", errors="backslashreplace")
-                # word = re.sub(whitespace, "_", word)
+                word = gpt2UnicodeConvert(token)
                 word = re.sub(whitespace, "\u2588", word)
                 vocabs.append(word)
         return vocabs
@@ -219,11 +275,11 @@ class GPT2Operator(SObject):
 
     def attention(self, x, attnw, attnb, projw, projb, nHead):
         # qkv projection
-        x3 = x @ attnw + attnb
+        x3 = x @ attnw + attnb  # attnw [n x 2304]
 
         # multi-head
-        qkv = List(torch.split(x3, x3.shape[-1] // 3, dim=-1))
-        qkv_heads = list(
+        qkv = List(torch.split(x3, x3.shape[-1] // 3, dim=-1))  # [[n x 768] [n x 768] [n x 768]]
+        qkv_heads = list(   # [([n x 64] x 12) (...) (...)]
             map(
                 lambda x: torch.split(x, x.size(-1) // nHead, dim=-1),
                 qkv
@@ -234,7 +290,7 @@ class GPT2Operator(SObject):
         q0 = qkv_heads[0][0]
         scaling = torch.sqrt(torch.tensor(q0.shape[-1], dtype=q0.dtype))
         out_heads = []
-        for q, k, v in zip(*qkv_heads):
+        for q, k, v in zip(*qkv_heads):  # [ ([13 x 64] x 3) x 12]
             out = self.softmax(
                     q @ k.transpose(-1, -2) / scaling + causal_mask
                   ) @ v

@@ -45,7 +45,22 @@ class Test_GPT2(TestCase):
         return
 
     @skip
-    def test100_download_model(self):
+    def test100_delete_download_save(self):
+        model = GPT2Operator().name("gpt2")     # smallest GPT model from HF
+        assert model.path() is not nil
+        model.deleteModel()
+        assert not model.path().exists()
+        model.downloadModel()
+        self.__class__.smodel = model
+        model.saveModel()
+
+        model = GPT2Operator().org("jtatman").name("gpt2-open-instruct-v1-Anthropic-hh-rlhf")
+        model.deleteModel()
+        model.downloadModel()
+        model.saveModel()
+
+    @skip
+    def test105_download_model(self):
         from transformers import AutoModel, AutoTokenizer
 
         # download and save model locally
@@ -59,8 +74,9 @@ class Test_GPT2(TestCase):
         model.save_pretrained(f"./{model_id}")  # Save model locally
         tokenizer.save_pretrained(f"./{model_id}")  # Save tokenizer locally
 
+    # @skip
     def test110_load_model(self):
-        smodel = GPT2Operator().name("gpt2/gpt2-124M").loadModel()
+        smodel = GPT2Operator().name("gpt2").loadModel()
         self.__class__.smodel = smodel
         assert smodel.notNil()
         assert len(smodel.state().keys()) > 0
@@ -382,4 +398,14 @@ class Test_GPT2(TestCase):
         vocabs = self.smodel.words()
         self.assertEqual(' the', vocabs[262])
 
+    @skipIf('SKIP' in env, reason="disabled")
+    def test320_tokens(self):
+        infer = self.smodel.inference().prompt(self.prompt2)
+        infer.wte().wpe()
+        x = infer.inputs()
+        assert x == [36235, 39141, 18765, 1143, 326, 9061, 561, 530, 1110, 1716, 262, 749, 3665]
+        x = infer.tokens()
+        assert x == ['Alan', 'ĠTuring', 'Ġtheor', 'ized', 'Ġthat', 'Ġcomputers', 'Ġwould', 'Ġone', 'Ġday', 'Ġbecome', 'Ġthe', 'Ġmost', 'Ġpowerful']
+        x = infer.words()
+        assert x == ['Alan', ' Turing', ' theor', 'ized', ' that', ' computers', ' would', ' one', ' day', ' become', ' the', ' most', ' powerful']
 

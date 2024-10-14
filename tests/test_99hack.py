@@ -51,7 +51,7 @@ class Test_Hack(TestCase):
     # @skipIf('SKIPHACK' in env, reason="disabled")
     @skip
     def test900_hack(self):
-        model = GPT2Operator().name("gpt2/gpt2-124M").loadModel()
+        model = GPT2Operator().name("gpt2").loadModel()
         pj = Projector().name('pj').model(model)
 
         return

@@ -126,7 +126,7 @@ class Test_Projector(TestCase):
     def setup(self):
         pkg = sscontext.loadPackage('projector')
         pkg = sscontext.loadPackage('tests')
-        # model = GPT2Adaptor().name("gpt2/gpt2-124M").load()
+        # model = GPT2Adaptor().name("gpt2").load()
         # pj = Projector().name('pj').model(model)
         if 'CLEAN_CACHE' in env:
             sscontext.log('Remove projector.zip & projector_np.zip.', Logger.LevelInfo)
@@ -156,7 +156,7 @@ class Test_Projector(TestCase):
         # 5.213 sec, delete projector_np.zip to measure this time.
         pj = Projector().name('projector_np')
         if not pj.hasFile():
-            model = GPT2OperatorNP().name("gpt2/124M").loadModel()
+            model = GPT2OperatorNP().name("gpt2-chkpt").loadModel()
             pj.model(model)
             projection = pj.project()
             assert (50257,4) == projection.df().shape
@@ -164,12 +164,16 @@ class Test_Projector(TestCase):
 
     # @skipIf('SKIP' in env, reason="disabled")
     def test310_tensor_project(self):
+        # model = GPT2Operator().\
+        #             org("jtatman").\
+        #             name("gpt2-open-instruct-v1-Anthropic-hh-rlhf").\
+        #             loadModel()
         # 0.695 sec
-        model = GPT2Operator().name("gpt2/gpt2-124M").loadModel()
+        model = GPT2Operator().name("gpt2").loadModel()
         self.__class__.model = model
         projector = Projector().name('pj').model(model)
         projection = projector.project()
-        assert (50257,4) == projection.df().shape
+        assert (768,3) == projection.components().shape
         self.__class__.projector = projector
 
     @skipIf('SKIP' in env, reason="disabled")
@@ -180,7 +184,7 @@ class Test_Projector(TestCase):
         pj1 = Projector().name('projector')
         pj1.loadFile()
         df1 = pj1.projection().df()
-        assert (50257,4) == df1.shape
+        assert (768,3) == pj1.projection().components().shape
         assert '\u2588the' == df1.iloc[262].word
         # assert ' the' == df1.iloc[262].word
 
@@ -216,9 +220,9 @@ class Test_Projector(TestCase):
         assert y == about(-0.414, 1e-3)
         assert z == about(-0.292, 1e-3)
 
-    # @skip
+    @skip
     def test340_project_vec_np(self):
-        modelNP = GPT2OperatorNP().name("gpt2/124M").loadModel()
+        modelNP = GPT2OperatorNP().name("gpt2-chkpt").loadModel()
         self.__class__.modelNP = modelNP
         pj2 = Projector().name('projector_np').model(modelNP).loadFile()
         projection2 = pj2.projection()
@@ -243,7 +247,7 @@ class Test_Projector(TestCase):
 
     @skipIf('SKIP' in env, reason="disabled")
     def test350_project_vec(self):
-        # model = GPT2Operator().name("gpt2/gpt2-124M").loadModel()
+        # model = GPT2Operator().name("gpt2").loadModel()
         model = self.model
         pj = Projector().name('projector').model(model).loadFile()
         projection = pj.projection()
@@ -332,7 +336,7 @@ class Test_Projector(TestCase):
         assert zeroKNN.asDF().shape == (5,8)
         assert zeroKNN.similarity().ids().squeeze().tolist() ==about([287, 319, 329, 379, 11])
         assert zeroKNN.similarity().sims().squeeze().tolist() == about([6.074, 6.114, 6.182, 6.021, 9.472], 1e-3)
-        assert zeroKNN.closestAngles().squeeze().tolist() == about([0.0593, 38.94, 44.55, 43.07, 50.1], 1e-3)
+        assert zeroKNN.closestAngles().squeeze().tolist() == about([0.0593, 0.0442, 0.0, 0.0485, 0.0343], 1e-3)
             # fp32 precision issues
         words = zeroKNN.closestWords()
         assert words == ['\u2588in', '\u2588on', '\u2588for', '\u2588at', ',']
@@ -445,7 +449,19 @@ class Test_Projector(TestCase):
         knn3 = pj.newTrace().fromIndices(trace3.similarity().ids())
         assert knn3.asDF()['word'].tolist() == ['\u2588theor', '\u2588hypothes', '\u2588hypothesized', '\u2588mathemat', '\u2588speculate']
 
-        return
+    @skipIf('SKIP' in env, reason="disabled")
+    def test445_trace(self):
+        model = self.model
+        pj = Projector().name('projector').model(model).loadFile()
+        trace = pj.newTrace().fromPrompt("Alan Turing theorized")
+
+        x = trace.indices()
+        assert x == [36235, 39141, 18765, 1143]
+        x = trace.tokens()
+        assert x == ['Alan', 'ĠTuring', 'Ġtheor', 'ized']
+        x = trace.words()
+        assert x == ['Alan', ' Turing', ' theor', 'ized']
+
 
     @skipIf('SKIP' in env, reason="disabled")
     def test450_show(self):
@@ -463,14 +479,20 @@ class Test_Projector(TestCase):
 
         origin = pj.newTrace().name('origin').fromVectors(0).color('black').show()
 
+        vectors = trace.vectors()
+        trace1 = pj.newTrace().fromVectors(vectors)
+        trace1.asDF()
+        trace1.show()
+
         # simulate the highlight
         tokenVec = trace.vectors()[1]
         highlight = pj.updateHighlight(tokenVec, 10)
         df = highlight.asDF()
+        highlight.showDF()
 
     @skip
     def test900_hack(self):
-        model = GPT2Operator().name("gpt2/gpt2-124M").loadModel()
+        model = GPT2Operator().name("gpt2").loadModel()
         pj = Projector().name('projector').model(model).loadFile()
         projection = pj.projection()
 
@@ -500,7 +522,7 @@ class Test_Projector(TestCase):
         p0 = projection.project(x0)
 
         # project using NP, results match with Torch
-        # model1 = GPT2OperatorNP().name("gpt2/124M").loadModel()
+        # model1 = GPT2OperatorNP().name("gpt2-chkpt").loadModel()
         # pj1 = Projector().name('projector_np').model(model1).loadFile()
         # projection1 = pj1.projection()
         #
@@ -509,9 +531,9 @@ class Test_Projector(TestCase):
         return
 
     # @skipIf('SKIP' in env, reason="di sabled")
-    # @skip
+    @skip
     def test910_hack(self):
-        model = GPT2Operator().name("gpt2/gpt2-124M").loadModel()
+        model = GPT2Operator().name("gpt2").loadModel()
         pj = Projector().name('projector').model(model).loadFile()
 
         # prompt = "Alan Turing theorized that computers would one day become"
@@ -532,5 +554,5 @@ class Test_Projector(TestCase):
 
         return
 
-
+    def test920_hack(self):
         return
