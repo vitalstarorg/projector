@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Based on https://github.com/jaymody/picoGPT/tree/main
-
 import json
 import os
 import re
@@ -26,9 +24,11 @@ from .GPT2Operator import GPT2Operator
 from .GPT2EncoderNP import get_encoder
 from .Projection import GPT2ProjectionNP
 
-# GPT2 Adaptor using Numpy
+#
+# This implementation was adapted from https://github.com/jaymody/picoGPT
+#
 class GPT2OperatorNP(GPT2Operator):
-
+    """Same as GPT2Operator but implemented using numpy for comparison."""
     def model(self, model=""):
         res = self._getOrSet('model', model, nil)
         return res

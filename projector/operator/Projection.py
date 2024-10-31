@@ -13,15 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import re
-from os import environ as env
-from dotenv import load_dotenv
-
-import pandas as pd
-import zipfile
-import tempfile
-import json
-import pickle
 import torch
 import numpy as np
 from sklearn.decomposition import PCA
@@ -29,14 +20,10 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import TruncatedSVD
 from smallscript import *
 
-import plotly.express as px
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-import ipywidgets
-from datetime import datetime
-from IPython.display import display
-
 class Projection(SObject):
+    """
+    Abstract two different PCA projection implementations: pytorch and numpy.
+    """
     emptyModel = Holder().name('emptyModel')        # it is empty model, used as visitor
     projected = Holder().name('projected')          # projected wte to lower dimension
     df = Holder().name('df')                        # projected wte in dataframe
@@ -54,7 +41,7 @@ class Projection(SObject):
         return selected
 
     def adjustComponents(self, components):
-        # Make the PCA a bit deterministic
+        # Make the PCA a bit deterministic by reversing axis to make first element to be positive.
         first = components[0,:]
         for i in range(first.shape[0]):
             element = first[i]
@@ -63,7 +50,11 @@ class Projection(SObject):
         return components
 
 class GPT2Projection(Projection):
+    """
+    Pytorch implementation for Projection
+    """
     def projectMatrix(self, matrix, ndim=3):
+        """Project matrix to 3D space using PCA."""
         mean = matrix.mean(dim=0)
         # var = matrix.var(dim=0)
         # std = torch.sqrt(var + self.epsilon().value())
@@ -96,6 +87,7 @@ class GPT2Projection(Projection):
         return self
 
     def projectVector(self, vectors):
+        """Project vectors to 3D space."""
         if isinstance(vectors, list):
             if isinstance(vectors[0], list):  # List of vectors
                 vectors = torch.tensor(vectors)
@@ -111,6 +103,9 @@ class GPT2Projection(Projection):
         return projected
 
 class GPT2ProjectionNP(Projection):
+    """
+    Numpy implementation for Projection
+    """
     def projectMatrix(self, matrix, ndim=3):
         scaler = StandardScaler(with_mean=True, with_std=False)
         scaled = scaler.fit_transform(matrix)

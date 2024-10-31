@@ -15,9 +15,12 @@
 
 from smallscript import *
 
-# Keep the state during inferencing. Could be a potential target for more generalization for other LLM models.
 class GPT2Inference(SObject):
-    model = Holder().name('model')      # LLMModel
+    """
+    Major abstraction to manipulate transformer operations. Keep the state during inferencing.
+    Could be a potential target for more generalization for other LLM models.
+    """
+    model = Holder().name('model')
     nlayer = Holder().name('nlayer')
     nhead = Holder().name('nhead')
     nembd = Holder().name('nembd')
@@ -147,11 +150,8 @@ class GPT2Inference(SObject):
     def fnorm(self):
         # ln_f norm
         model = self.model()
-        w = model.modelParams().getValue('ln_f.w')
-        b = model.modelParams().getValue('ln_f.b')
-        x10 = model.layerNorm(self.x(), w, b)
+        x10 = model.fnorm(self.x())
         self.delta(x10)
-        # self.x(x10)
 
         # logits
         wte = model.modelParams().getValue('wte')

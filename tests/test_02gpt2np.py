@@ -20,10 +20,6 @@ from pytest import approx
 skip = pytest.mark.skip
 skipIf = pytest.mark.skipif
 
-import torch
-
-import os
-import re
 import numpy as np
 from os import environ as env
 
@@ -32,15 +28,15 @@ from smallscript import *
 
 # env['SKIPHACK'] = '1'
 # env['SKIP'] = '1'
+
+#### Following tests are the first implementation to establish the baseline math results using numpy.
 class Test_GPT2NP(TestCase):
+
     @pytest.fixture(autouse=True, scope='class')
     def setup(self):
         self.__class__.prompt1 = "Alan Turing theorized that computers would one day become"
         self.__class__.prompt2 = "Alan Turing theorized that computers would one day become the most powerful"
-        from dotenv import load_dotenv
         pkg = sscontext.loadPackage('projector')
-        load_dotenv("../.env")
-        return
 
     @skip
     def test100_download_model(self):
@@ -49,55 +45,49 @@ class Test_GPT2NP(TestCase):
 
     @skipIf('SKIP' in env, reason="disabled")
     def test110_load_model(self):
-        smodel = GPT2OperatorNP().name("gpt2-chkpt").loadModel()
-        self.__class__.smodel = smodel
-        assert len(smodel.blockParams().keys()) > 0
+        #### Load the model locally
+        # Make sure LLM_MODEL_PATH is defined in env or in .env file
+        model = GPT2OperatorNP().name("gpt2-chkpt").loadModel()
+        self.__class__.model = model
+        assert len(model.blockParams().keys()) > 0
 
     @skipIf('SKIP' in env, reason="disabled")
     def test120_encode_prompt(self):
-        input_ids = self.smodel.tokenizer().encode(self.prompt2)
+        input_ids = self.model.tokenizer().encode(self.prompt2)
         assert len(input_ids) > 0
 
     @skipIf('SKIP' in env, reason="disabled")
     def test130_decode(self):
-        token = self.smodel.tokenizer().decode([36235])
+        token = self.model.tokenizer().decode([36235])
         assert token == "Alan"
-        token = self.smodel.tokenizer().decode([1716])
+        token = self.model.tokenizer().decode([1716])
         assert token == " become"
         return
 
     @skipIf('SKIP' in env, reason="disabled")
     def test140_wte_wpe(self):
+        #### wte and wpe transformation
         # both wte and wpe are not unit vector
-        s = self.smodel
+        s = self.model
         wte = s.findParamBySpecs('wte')
         wpe = s.findParamBySpecs('wpe')
         assert wte is not nil
         assert wpe is not nil
 
-        input_ids = self.smodel.tokenizer().encode(self.prompt2)
+        input_ids = self.model.tokenizer().encode(self.prompt2)
         x = wte[input_ids[0]]
-        words = self.smodel.closestWords(x)
+        words = self.model.closestWords(x)
         self.assertEqual('Alan', words[0])
 
         # token + positional embeddings
         x1 = wte[input_ids]
         x2 = wpe[range(len(input_ids))]
         self.__class__.x = x1 + x2
-        """
-        # forward pass through n_layer transformer blocks
-        for block in blocks:
-            x = transformer_block(x, **block, n_head=n_head)  # [n_seq, n_embd] -> [n_seq, n_embd]
-
-        # projection to vocab
-        x = layer_norm(x, **ln_f)  # [n_seq, n_embd] -> [n_seq, n_embd]
-        return x @ wte.T  # [n_seq, n_embd] -> [n_seq, n_vocab]
-        """
 
     @skipIf('SKIP' in env, reason="disabled")
-    def test150_block_math1(self):
-        #### Dissect transform_block
-        s = self.smodel
+    def test150_block_math(self):
+        #### Delineate all math in a transformer block
+        s = self.model
         x = self.x
         n = self.x.shape[0]
 
@@ -114,7 +104,7 @@ class Test_GPT2NP(TestCase):
         # numbers from np implementation,
         # https://openaipublic.blob.core.windows.net/gpt-2/models
         # looks gpt2 tf is a low precision model even it is fp32.
-        # The discrepency propagates through calculation and down to 0.1 accuracy using Pytorch.
+        # The discrepency propagates through calculation and down to 0.1 accuracy using pytorch.
         assert w[0] == approx(0.22322033)
         assert b[0] == approx(-0.003677325)
         assert x1[0][0] == approx(0.08182119)
@@ -251,7 +241,8 @@ class Test_GPT2NP(TestCase):
 
     @skipIf('SKIP' in env, reason="disabled")
     def test160_block_model(self):
-        s = self.smodel
+        #### Assemble these math in different method e.g. layerNorm(), attention(), feedforward(), etc.
+        s = self.model
         x = self.x
 
         # Layer Norm & Attention
@@ -289,9 +280,9 @@ class Test_GPT2NP(TestCase):
 
     @skipIf('SKIP' in env, reason="disabled")
     def test170_block_inference(self):
-        smodel = self.smodel
-
-        infer = smodel.inference().prompt(self.prompt2)
+        #### Manipulate these model method using inference object
+        model = self.model
+        infer = model.inference().prompt(self.prompt2)
         infer.wte()
         infer.wpe()
 
@@ -317,10 +308,9 @@ class Test_GPT2NP(TestCase):
 
     @skipIf('SKIP' in env, reason="disabled")
     def test180_block_layers(self):
-        smodel = self.smodel
-
+        #### Using an inference object to make a more complicate manipulation
         # forward pass through n_layer transformer blocks
-        infer = smodel.inference().prompt(self.prompt2)
+        infer = self.model.inference().prompt(self.prompt2)
         infer.wte().wpe()
         for layer in range(infer.nlayer()):
             infer.lnorm1(layer).attn(layer).sum()
@@ -343,9 +333,8 @@ class Test_GPT2NP(TestCase):
 
     @skipIf('SKIP' in env, reason="disabled")
     def test200_smallscript1(self):
-        smodel = self.smodel
-
-        infer = smodel.inference().prompt(self.prompt2)
+        #### Using smallscript for the same manipulation
+        infer = self.model.inference().prompt(self.prompt2)
         x2 = infer.ssrun("self wte wpe lnorm1: 0 | delta")
         assert 0.014586827 == approx(x2[0][0])
         x5 = infer.ssrun("self attn: 0 | delta")
@@ -359,7 +348,7 @@ class Test_GPT2NP(TestCase):
         assert -1.0868139 == approx(x[0][767])
 
         # inferencing with smallscript
-        infer = smodel.inference().prompt(self.prompt2)
+        infer = self.model.inference().prompt(self.prompt2)
         # closure = sscontext.interpret("wte wpe lnorm1: 0 | attn: 0 | sum | lnorm2: 0 | ffn: 0 | sum x")
         x = infer.ssrun("self wte | wpe | lnorm1: 0 | attn: 0 | sum | lnorm2: 0 | ffn: 0 | sum | x")
         assert 0.33122557 == approx(x[0][0])
@@ -367,10 +356,9 @@ class Test_GPT2NP(TestCase):
 
     @skip
     def test210_smallscript2(self):
+        #### Fully express two GPT generations end-to-end using smallscript
         # takes 3.009sec vs 667ms using PyTorch
-        smodel = self.smodel
-
-        infer = smodel.inference().prompt(self.prompt2)
+        infer = self.model.inference().prompt(self.prompt2)
         x = infer.ssrun("""self 
                 wte | wpe |
                 lnorm1: 0 | attn: 0 | sum | lnorm2: 0 | ffn: 0 | sum | 
@@ -392,15 +380,16 @@ class Test_GPT2NP(TestCase):
 
     @skip
     def test300_pca(self):
+        #### Test the projection calculation
         # takes 6.632 sec vs 275ms using PyTorch
-        wte = self.smodel.modelParams().getValue('wte')
-        pca = self.smodel.project(wte, 3)
+        wte = self.model.modelParams().getValue('wte')
+        pca = self.model.project(wte, 3)
         assert (wte.shape[0], 3) == pca.shape
-        return
 
     @skipIf('SKIP' in env, reason="disabled")
     def test310_vocabs(self):
-        vocabs = self.smodel.words()
+        #### Test model.words()
+        vocabs = self.model.words()
         self.assertEqual(' the', vocabs[262])
 
         # Showing UTF-8 encode and decode

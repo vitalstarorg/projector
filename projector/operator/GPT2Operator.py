@@ -29,6 +29,7 @@ import json
 import difflib
 
 class GPT2Operator(SObject):
+    """Main abstraction for GPT2 LLM model."""
     org = Holder().name('org').type('String')
     state = Holder().name('state')
     tokenizer = Holder().name('tokenizer')
@@ -62,6 +63,7 @@ class GPT2Operator(SObject):
             append('mlp | proj.w'). \
             append('mlp | proj.b')
 
+    #### Model parameters access methods
     def model(self, model=""):  # Hugging Face model
         res = self._getOrSet('model', model, nil)
         if model == "": return res
@@ -104,7 +106,9 @@ class GPT2Operator(SObject):
         res = self.state().get(key)
         return res
 
+    #### Model download, save, load, delete methods.
     def path(self, modelname=""):
+        """Load LLM model locally if LLM_MODEL_PATH environment is defined."""
         if modelname == "":
             modelname = self.name()
         if 'LLM_MODEL_PATH' not in env:
@@ -190,6 +194,7 @@ class GPT2Operator(SObject):
         self.byte_decoder(byte_decoder)
         return self
 
+    #### Token accessing methods
     def searchTokens(self, spelling, n = 5):
         tokens = self.tokens()
         wte = self.modelParams()['wte']
@@ -236,6 +241,7 @@ class GPT2Operator(SObject):
         vocabs = self._words(labels, byte_decoder, replacement)
         return vocabs
 
+    #### Projection and Similarity methods
     def projectMatrix(self, matrix, ndim=3):
         emptyModel = self.createEmpty()         # visitor.projectVector()
         projection = GPT2Projection().emptyModel(emptyModel)
@@ -260,6 +266,7 @@ class GPT2Operator(SObject):
         indices = top_k.indices
         return indices
 
+    #### Transformer implementation
     def softmax(self, x):
         max = torch.max(x, dim=-1, keepdim=True).values
         exp = torch.exp(x - max)
@@ -273,19 +280,25 @@ class GPT2Operator(SObject):
         x2 = w * x1 + b
         return x2
 
-    def attention(self, x, attnw, attnb, projw, projb, nHead):
+    def fnorm(self, x):
+        w = self.modelParams().getValue('ln_f.w')
+        b = self.modelParams().getValue('ln_f.b')
+        fnorm = self.layerNorm(x, w, b)
+        return fnorm
+
+    def attention(self, d, attnw, attnb, projw, projb, nHead):
         # qkv projection
-        x3 = x @ attnw + attnb  # attnw [n x 2304]
+        d3 = d @ attnw + attnb  # attnw [n x 2304]
 
         # multi-head
-        qkv = List(torch.split(x3, x3.shape[-1] // 3, dim=-1))  # [[n x 768] [n x 768] [n x 768]]
+        qkv = List(torch.split(d3, d3.shape[-1] // 3, dim=-1))  # [[n x 768] [n x 768] [n x 768]]
         qkv_heads = list(   # [([n x 64] x 12) (...) (...)]
             map(
                 lambda x: torch.split(x, x.size(-1) // nHead, dim=-1),
                 qkv
             )
         )
-        triMatrix = torch.tril(torch.ones(x3.shape[0], x3.shape[0], dtype=x3.dtype))
+        triMatrix = torch.tril(torch.ones(d3.shape[0], d3.shape[0], dtype=d3.dtype))
         causal_mask = (1 - triMatrix) * -1e10
         q0 = qkv_heads[0][0]
         scaling = torch.sqrt(torch.tensor(q0.shape[-1], dtype=q0.dtype))
@@ -295,31 +308,25 @@ class GPT2Operator(SObject):
                     q @ k.transpose(-1, -2) / scaling + causal_mask
                   ) @ v
             out_heads.append(out)
-        x4 = torch.cat(out_heads, dim=1)
-            # merge heads
+        d4 = torch.cat(out_heads, dim=1)  # merge heads
 
         # MHA: out projection
-        x5 = x4 @ projw + projb
-        return x5
+        d5 = d4 @ projw + projb
+        return d5
 
-    def feedforward(self, x, fcw, fcb, projw, projb):
+    def feedforward(self, d, fcw, fcb, fprojw, fprojb):
         # project up
-        x1 = x @ fcw + fcb
+        d8 = d @ fcw + fcb
 
         # gelu
         sqrt_2_pi = torch.sqrt(torch.tensor(2 / torch.pi))  # Equivalent to np.sqrt(2 / np.pi)
-        term = x1 + 0.044715 * x1 ** 3
+        term = d8 + 0.044715 * d8 ** 3
         tanh_term = torch.tanh(sqrt_2_pi * term)
-        x2 = 0.5 * x1 * (1 + tanh_term)
+        d9 = 0.5 * d8 * (1 + tanh_term)
 
         # project back down
-        x3 = x2 @ projw + projb
-        return x3
-
-    def getDevice(self):
-        if torch.cuda.is_available(): return 'cuda'
-        if torch.backends.mps.is_available(): return 'mps'
-        return 'cpu'
+        d10 = d9 @ fprojw + fprojb
+        return d10
 
     def logits(self, x, wte):
         x11 = x @ wte.transpose(-1, -2)
@@ -337,7 +344,13 @@ class GPT2Operator(SObject):
         zeros = torch.zeros(nrow, ncolumn)
         return zeros
 
+    def getDevice(self):
+        if torch.cuda.is_available(): return 'cuda'
+        if torch.backends.mps.is_available(): return 'mps'
+        return 'cpu'
+
     def inference(self):
+        """Create an inference object for defining a transformer."""
         inference = GPT2Inference().model(self)
         modelParams = self.modelParams()
         inference.nlayer(modelParams.getAsNumber('n_layer'))
