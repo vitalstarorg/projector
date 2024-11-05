@@ -32,8 +32,8 @@ class Similarity(SObject):
     def copy(self): return self.createEmpty().model(self.model())
 
     def degrees(self, sims):
-        sims = torch.clamp(sims, -1, 1)
-        rad = torch.arccos(sims)
+        sims1 = torch.clamp(sims, -1, 1)
+        rad = torch.arccos(sims1)
         deg = rad * (180/torch.pi)
         degrees = torch.round(deg * 10000) / 10000
         return degrees
@@ -41,6 +41,7 @@ class Similarity(SObject):
     def knn(self, vectors):
         wte = self.model().modelParams()['wte']
         vnorms = vectors.norm(dim=1, keepdim=True)
+        # vnorms = vectors.square().sum(dim=1, keepdim=True).sqrt()
         wnorms = wte.norm(dim=1, keepdim=True)
         if vnorms.shape == (1,1) and vnorms == 0:      # zero vector
             # Finding k embedding vectors with largest norms as inputs.
@@ -71,6 +72,7 @@ class CosineSimilarity(Similarity):
     def knn(self, vectors):
         wte = self.model().modelParams()['wte']
         vnorms = vectors.norm(dim=1, keepdim=True)
+        # vnorms = vectors.square().sum(dim=1, keepdim=True).sqrt()
         wnorms = wte.norm(dim=1, keepdim=True)
         if vnorms.shape == (1,1) and vnorms == 0:      # zero vector
             norms, indices = torch.topk(wnorms.T, self.k(), largest=False)
@@ -80,9 +82,9 @@ class CosineSimilarity(Similarity):
             maxSim = torch.mm(vecs, naverage.T)
             degrees = self.degrees(maxSim).flatten()
         else:
-            vectors = vectors / torch.where(vnorms == 0, torch.ones_like(vnorms), vnorms)
+            vectors1 = vectors / torch.where(vnorms == 0, torch.ones_like(vnorms), vnorms)
             wte = wte / torch.where(wnorms == 0, torch.ones_like(wnorms), wnorms)
-            sim = torch.mm(vectors, wte.T)
+            sim = torch.mm(vectors1, wte.T)
             maxSim, indices = torch.topk(sim, self.k(), dim=1)
             degrees = self.degrees(maxSim)
         self.sims(maxSim)
