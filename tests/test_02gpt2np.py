@@ -108,10 +108,10 @@ class Test_GPT2NP(TestCase):
         # https://openaipublic.blob.core.windows.net/gpt-2/models
         # looks gpt2 tf is a low precision model even it is fp32.
         # The discrepency propagates through calculation and down to 0.1 accuracy using pytorch.
-        assert w[0] == approx(0.22322033)
-        assert b[0] == approx(-0.003677325)
-        assert x1[0][0] == approx(0.08182119)
-        assert x2[0][0] == approx(0.014586827)
+        assert w[0] == about(0.22322033)
+        assert b[0] == about(-0.003677325)
+        assert x1[0][0] == about(0.08182119)
+        assert x2[0][0] == about(0.014586827)
 
         # Multi-Head Attention
         # qkv projection
@@ -127,9 +127,9 @@ class Test_GPT2NP(TestCase):
         self.assertEqual((n, 768), q.shape)
         self.assertEqual((n, 768), k.shape)
         self.assertEqual((n, 768), v.shape)
-        assert 0.010422617 == approx(q[0][0])
-        assert -1.3149338 == approx(k[0][0])
-        assert -0.06303753 == approx(v[0][0])
+        assert 0.010422617 == about(q[0][0])
+        assert -1.3149338 == about(k[0][0])
+        assert -0.06303753 == about(v[0][0])
 
         # split into heads
         n_head = s.config().getValue('n_head')
@@ -141,16 +141,16 @@ class Test_GPT2NP(TestCase):
         v_heads = qkv_heads[2]
         assert 12 == len(q_heads)
         assert (13,64) == q_heads[0].shape
-        assert 0.010422617 == approx(q_heads[0][0][0])
-        assert -1.3149338 == approx(k_heads[0][0][0])
-        assert -0.06303753 == approx(v[0][0])
+        assert 0.010422617 == about(q_heads[0][0][0])
+        assert -1.3149338 == about(k_heads[0][0][0])
+        assert -0.06303753 == about(v[0][0])
 
         # causal mask to hide future inputs from being attended to
         causal_mask = (1 - np.tri(x1.shape[0], dtype=x1.dtype)) * -1e10  # [n_seq, n_seq]
         assert (13,13) == causal_mask.shape
-        assert 0.0 == approx(causal_mask[0][0])
-        assert -1e10 == approx(causal_mask[0][1])
-        assert 0.0 == approx(causal_mask[12].sum())
+        assert 0.0 == about(causal_mask[0][0])
+        assert -1e10 == about(causal_mask[0][1])
+        assert 0.0 == about(causal_mask[12].sum())
         # [0 1 1]
         # [0 0 1]
         # [0 0 0]
@@ -180,14 +180,14 @@ class Test_GPT2NP(TestCase):
 
         # out = G.softmax(q @ k.T / np.sqrt(q.shape[-1]) + causal_mask) @ v
         out = q @ k.T / np.sqrt(q.shape[-1]) + causal_mask
-        assert 0.35876253 == approx(out[0][0])
-        assert 0.27021736 == approx(out[1][0])
+        assert 0.35876253 == about(out[0][0])
+        assert 0.27021736 == about(out[1][0])
         out = s.softmax(out)
-        assert 1.0 == approx(out[0][0], 1e-2)
-        assert 0.52973026 == approx(out[1][0])
+        assert 1.0 == about(out[0][0], 1e-2)
+        assert 0.52973026 == about(out[1][0])
         out = out @ v
-        assert -0.06303753 == approx(out[0][0])
-        assert -0.06342241 == approx(out[1][0])
+        assert -0.06303753 == about(out[0][0])
+        assert -0.06342241 == about(out[1][0])
         out_heads.append(out)
         for i in range(1, len(z)):
             q = z[i][0]
@@ -205,10 +205,10 @@ class Test_GPT2NP(TestCase):
         w = s.findParamBySpecs('attn | proj.w')
         b = s.findParamBySpecs('attn | proj.b')
         x5 = x4 @ w + b
-        assert -0.21653405 == approx(x5[0][0])
+        assert -0.21653405 == about(x5[0][0])
 
         x = x + x5
-        assert -0.19048978 == approx(x[0][0])
+        assert -0.19048978 == about(x[0][0])
 
         # position-wise feed forward network
         # Layer Norm with ln_2
@@ -219,28 +219,28 @@ class Test_GPT2NP(TestCase):
         variance = np.var(x, axis=-1, keepdims=True)
         x6 = (x - mean) / np.sqrt(variance + eps)  # normalize x to have mean=0 and var=1 over last axis
         x6 = w * x6 + b  # scale and offset with gamma/beta params
-        assert 0.019723138 == approx(x6[0][0])
+        assert 0.019723138 == about(x6[0][0])
 
         # x = x + ffn(x2, **mlp)  # [n_seq, n_embd] -> [n_seq, n_embd]
         # project up
         w = s.findParamBySpecs("fc.w")
         b = s.findParamBySpecs("fc.b")
         x7 = x6 @ w + b
-        assert 0.26455063 == approx(x7[0][0])
+        assert 0.26455063 == about(x7[0][0])
 
         # a = gelu(linear(x2, **c_fc))  # [n_seq, n_embd] -> [n_seq, 4*n_embd]
         x8 = 0.5 * x7 * (1 + np.tanh(np.sqrt(2 / np.pi) * (x7 + 0.044715 * x7 ** 3)))
-        assert 0.15987226 == approx(x8[0][0])
+        assert 0.15987226 == about(x8[0][0])
 
         # project back down
         w = s.findParamBySpecs("mlp | proj.w")
         b = s.findParamBySpecs("mlp | proj.b")
         x9 = x8 @ w + b
-        assert 0.52171534 == approx(x9[0][0])
+        assert 0.52171534 == about(x9[0][0])
 
         x = x + x9
-        assert 0.33122557 == approx(x[0][0])
-        assert -1.0868139 == approx(x[0][767])
+        assert 0.33122557 == about(x[0][0])
+        assert -1.0868139 == about(x[0][767])
 
     @skipIf('SKIP' in env, reason="disabled")
     def test160_block_model(self):
@@ -252,7 +252,7 @@ class Test_GPT2NP(TestCase):
         w = s.findParamBySpecs("ln_1.w")
         b = s.findParamBySpecs("ln_1.b")
         x2 = s.layerNorm(x, w, b)
-        assert x2[0][0] == approx(0.014586827)
+        assert x2[0][0] == about(0.014586827)
         n_head = s.config().getValue('n_head')
         attnw = s.findParamBySpecs('attn.w')
         attnb = s.findParamBySpecs('attn.b')
@@ -268,17 +268,17 @@ class Test_GPT2NP(TestCase):
         w = s.findParamBySpecs("ln_2.w")
         b = s.findParamBySpecs("ln_2.b")
         x6 = s.layerNorm(x, w, b)
-        assert 0.019723138 == approx(x6[0][0])
+        assert 0.019723138 == about(x6[0][0])
         fcw = s.findParamBySpecs("fc.w")
         fcb = s.findParamBySpecs("fc.b")
         projw = s.findParamBySpecs("mlp | proj.w")
         projb = s.findParamBySpecs("mlp | proj.b")
         x9 = s.feedforward(x6, fcw, fcb, projw, projb)
-        assert 0.52171534 == approx(x9[0][0])
+        assert 0.52171534 == about(x9[0][0])
 
         x = x + x9
-        assert 0.33122557 == approx(x[0][0], 1e-2)
-        assert -1.0868139 == approx(x[0][767], 1e-3)
+        assert 0.33122557 == about(x[0][0], 1e-2)
+        assert -1.0868139 == about(x[0][767], 1e-3)
         return
 
     @skipIf('SKIP' in env, reason="disabled")
@@ -299,15 +299,15 @@ class Test_GPT2NP(TestCase):
         infer.sum()
         infer.lnorm2(0)
         x6 = infer.delta()
-        assert 0.019723138 == approx(x6[0][0])
+        assert 0.019723138 == about(x6[0][0])
         infer.ffn(0)
         x9 = infer.delta()
-        assert 0.52171534 == approx(x9[0][0])
+        assert 0.52171534 == about(x9[0][0])
 
         infer.sum()
         x = infer.x()
-        assert 0.33122557 == approx(x[0][0])
-        assert -1.0868139 == approx(x[0][767])
+        assert 0.33122557 == about(x[0][0])
+        assert -1.0868139 == about(x[0][767])
 
     @skipIf('SKIP' in env, reason="disabled")
     def test180_block_layers(self):
@@ -319,7 +319,7 @@ class Test_GPT2NP(TestCase):
             infer.lnorm1(layer).attn(layer).sum()
             infer.lnorm2(layer).ffn(layer).sum()
         infer.fnorm()
-        assert -127.84109 == approx(infer.logits()[-1][0])
+        assert -127.84109 == about(infer.logits()[-1][0])
         assert 8217 == infer.argmax()[-1]       # greedy sampling
         assert ' machines' == infer.generation()[-1]
             # infer.x should be a unit vector, but wte is not
@@ -339,23 +339,23 @@ class Test_GPT2NP(TestCase):
         #### Using smallscript for the same manipulation
         infer = self.model.inference().prompt(self.prompt2)
         x2 = infer.ssrun("self wte wpe lnorm1: 0 | delta")
-        assert 0.014586827 == approx(x2[0][0])
+        assert 0.014586827 == about(x2[0][0])
         x5 = infer.ssrun("self attn: 0 | delta")
         assert -0.21653405 == about(x5[0][0], 1e-4)
         x6 = infer.ssrun("self sum lnorm2: 0 | delta")
-        assert 0.019723138 == approx(x6[0][0])
+        assert 0.019723138 == about(x6[0][0])
         x9 = infer.ssrun("self ffn: 0 | delta")
-        assert 0.52171534 == approx(x9[0][0])
+        assert 0.52171534 == about(x9[0][0])
         x = infer.ssrun("self sum x")
-        assert 0.33122557 == approx(x[0][0])
-        assert -1.0868139 == approx(x[0][767])
+        assert 0.33122557 == about(x[0][0])
+        assert -1.0868139 == about(x[0][767])
 
         # inferencing with smallscript
         infer = self.model.inference().prompt(self.prompt2)
         # closure = sscontext.interpret("wte wpe lnorm1: 0 | attn: 0 | sum | lnorm2: 0 | ffn: 0 | sum x")
         x = infer.ssrun("self wte | wpe | lnorm1: 0 | attn: 0 | sum | lnorm2: 0 | ffn: 0 | sum | x")
-        assert 0.33122557 == approx(x[0][0])
-        assert -1.0868139 == approx(x[0][767])
+        assert 0.33122557 == about(x[0][0])
+        assert -1.0868139 == about(x[0][767])
 
     @skip
     def test210_smallscript2(self):
@@ -369,7 +369,7 @@ class Test_GPT2NP(TestCase):
                 layer: 4 | layer: 5 | layer: 6 | layer: 7 |
                 layer: 8 | layer: 9 | layer: 10 | layer: 11 |
                 fnorm""")
-        assert -127.84109 == approx(infer.logits()[-1][0], 1e-3)
+        assert -127.84109 == about(infer.logits()[-1][0], 1e-3)
         assert 8217 == infer.argmax()[-1]
         assert ' machines' == infer.generation()[-1]
 
