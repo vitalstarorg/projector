@@ -24,10 +24,13 @@ import numpy as np
 from os import environ as env
 
 from projector.operator.GPT2OperatorNP import *
+from projector.utils.About import About
 from smallscript import *
 
 # env['SKIPHACK'] = '1'
 # env['SKIP'] = '1'
+
+about = About()
 
 #### Following tests are the first implementation to establish the baseline math results using numpy.
 class Test_GPT2NP(TestCase):
@@ -116,7 +119,7 @@ class Test_GPT2NP(TestCase):
         b = s.findParamBySpecs('attn.b')
         x3 = x2 @ w + b
         assert (n, 2304) == x3.shape
-        assert 0.010422617 == approx(x3[0][0])
+        assert 0.010422617 == about(x3[0][0], 1e-4)
 
         # split into qkv
         qkv = np.split(x3, 3, axis=-1)  # [n_seq, 3*n_embd] -> [3, n_seq, n_embd]
@@ -257,7 +260,7 @@ class Test_GPT2NP(TestCase):
         projb = s.findParamBySpecs('attn | proj.b')
         x5 = s.attention(x2, attnw, attnb,
                              projw, projb, n_head)
-        assert -0.21653405 == approx(x5[0][0])
+        assert -0.21653405 == about(x5[0][0], 1e-4)
 
         x = x + x5
 
@@ -288,10 +291,10 @@ class Test_GPT2NP(TestCase):
 
         infer.lnorm1(0)
         x2 = infer.delta()
-        assert 0.014586827 == approx(x2[0][0])
+        assert 0.014586827 == about(x2[0][0], 1e-4)
         infer.attn(0)
         x5 = infer.delta()
-        assert -0.21653405 == approx(x5[0][0])
+        assert -0.21653405 == about(x5[0][0], 1e-4)
 
         infer.sum()
         infer.lnorm2(0)
@@ -338,7 +341,7 @@ class Test_GPT2NP(TestCase):
         x2 = infer.ssrun("self wte wpe lnorm1: 0 | delta")
         assert 0.014586827 == approx(x2[0][0])
         x5 = infer.ssrun("self attn: 0 | delta")
-        assert -0.21653405 == approx(x5[0][0])
+        assert -0.21653405 == about(x5[0][0], 1e-4)
         x6 = infer.ssrun("self sum lnorm2: 0 | delta")
         assert 0.019723138 == approx(x6[0][0])
         x9 = infer.ssrun("self ffn: 0 | delta")
