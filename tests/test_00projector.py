@@ -79,6 +79,7 @@ class Test_Projector(TestCase):
         pj = Projector().name('projector_np')
         if not pj.hasCache():
             model = GPT2OperatorNP().name("gpt2-chkpt").loadModel()
+            if model is nil: return
             pj.model(model)
             projection = pj.project()   # calculate the 3D PCA projection
             assert (50257,4) == projection.df().shape

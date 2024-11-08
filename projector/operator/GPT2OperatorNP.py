@@ -74,7 +74,7 @@ class GPT2OperatorNP(GPT2Operator):
         if modelname != "":
             self.name(modelname)
         modelpath = self.path(modelname)
-        if modelpath is nil: return nil
+        if modelpath is nil or not modelpath.exists(): return nil
         encoder, hparams, params = self.load_encoder_hparams_and_params("", modelpath)
         self.model(Map(params)).config(Map(hparams)).tokenizer(encoder).readParams()
         return self

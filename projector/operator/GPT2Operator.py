@@ -181,7 +181,7 @@ class GPT2Operator(SObject):
         if modelname != "":
             self.name(modelname)
         modelpath = self.path(modelname)
-        if modelpath is nil: return nil
+        if modelpath is nil or not modelpath.exists(): return nil
         model = AutoModelWithLMHead.from_pretrained(modelpath)
         tokenizer = AutoTokenizer.from_pretrained(modelpath)
         config = Map(PretrainedConfig.get_config_dict(modelpath)[0])
