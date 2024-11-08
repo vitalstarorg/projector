@@ -30,7 +30,7 @@ ipyaggrid
 torch==2.1.2
 torchvision==0.16.2
 torchaudio==2.1.2
-torchtext==0.14.1  # 0.16.2
+torchtext
 GPUtil==1.4.0
 spacy==3.7.4
 safetensors==0.4.1
