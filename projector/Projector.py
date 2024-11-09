@@ -14,15 +14,10 @@
 # limitations under the License.
 
 import re
-from os import environ as env
-
 import numpy as np
-from dotenv import load_dotenv
-
 import pandas as pd
 import zipfile
 import tempfile
-import json
 import pickle
 import random
 import torch
@@ -30,13 +25,10 @@ from smallscript import *
 
 import plotly.express as px
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 import ipywidgets
 from datetime import datetime
 from IPython.display import display
 from pathlib import Path
-from .operator.Projection import Projection
-from .operator.Similarity import Similarity
 
 class Projector(SObject):
     """
