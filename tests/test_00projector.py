@@ -476,20 +476,20 @@ class Test_Projector(TestCase):
         return
 
     # @skipIf('SKIP' in env, reason="disabled")
-    @skip
+    # @skip
     def test910_hack(self):
         model = GPT2Operator().name("gpt2").loadModel()
         pj = Projector().name('projector').model(model).loadCache()
 
         infer = model.inference().prompt("Alan Turing theorized")
         x0 = infer.x()
-        x = infer.ssrun("""self 
-                wte | wpe |
-                lnorm1: 0 | attn: 0 | sum | lnorm2: 0 | ffn: 0 | sum | 
-                | layer: 1 | layer: 2 | layer: 3 |
-                layer: 4 | layer: 5 | layer: 6 | layer: 7 |
-                layer: 8 | layer: 9 | layer: 10 | layer: 11 |
-                fnorm""")
+        x = infer.ssrun("""
+            self wte | wpe 
+                | lnorm1: 0 | attn: 0 | sum | lnorm2: 0 | ffn: 0 | sum
+                | layer: 1 | layer: 2 | layer: 3
+                | layer: 4 | layer: 5 | layer: 6 | layer: 7
+                | layer: 8 | layer: 9 | layer: 10 | layer: 11
+                | fnorm""")
         x1 = infer.x()
         trace4 = pj.newTrace().fromVectors(x1)
         df = trace4.asDF()
