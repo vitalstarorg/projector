@@ -476,7 +476,7 @@ class Test_Projector(TestCase):
         return
 
     # @skipIf('SKIP' in env, reason="disabled")
-    # @skip
+    @skip
     def test910_hack(self):
         model = GPT2Operator().name("gpt2").loadModel()
         pj = Projector().name('projector').model(model).loadCache()

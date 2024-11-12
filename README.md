@@ -4,17 +4,73 @@
 ## What are you seeing...
 The image shows how LLM GPT2 transforms the prompt "Alan Turing theorized that the" through each layers of transformer to find the next word "universe".
  
-Since the dimension of the embedding vectors are 786 in GPT2, we project these higher dimensional vectors to a 3d space for ease of visualization. The little fluffy cloud are the 50257 encoded tokens in the LLM. Both the origin of higher dimension and center of the embedding cloud are projected as a black dot and a black cross. If you click on the animated image, it will show you the 3d interactive graph that you can further examine the details of each transition. For example, if you follow the blue dots from te5, pe5, 0, 1, 2 ... 11, you will see how the last word in the prompt, the token "the" got transformed to "universe" after 12 layers of the transformer.
+Since the dimension of the embedding vectors are 786d in GPT2, we project these higher dimensional vectors to a 3d space for ease of visualization. The little fluffy cloud are the 50257 encoded tokens in the LLM. Both the origin of the higher dimension and center of the embedding cloud are projected as a black dot and a black cross. If you click on the animated image, it will show you the 3d interactive graph that you can further examine the details of each transition. For example, if you follow the blue dots from te5, pe5, 0, 1, 2 ... 11, you will see how the last word in the prompt, the token "the" got transformed to "universe" after 12 layers of the transformer.
 ## Motivation
 A picture worth a thousand words. With this interactive 3d projection done by PCA, it helps us to understand the effect of each transformation through a LLM transformer. Since it is a linear transformation from 768d to 3d, it gives us clues on the function of each element inside the LLM e.g. position encoding, layer norm, attention, MLP and the final logit by examining their relative and changing positions. The picture above is just one use case of this projector library.
 ## Projector
 Projector is a research tool. We develop this to help us to understand layers of LLM transformation at higher dimensions by visualizing its effect through projected 3d vector space. Emphasis is to make intuitive use of the library objects e.g. _projector_, _projection_ and _trace_, in order to avoid misinterpretation of these vectors.
 ### Main Objects
 #### Projector
+`Projector` is the main object in this library to allow us to manipulate and project high dimensional vectors to a 3d space. It also provides interactivity to explore these vectors and their relationship e.g. projector would respond to mouse click, please see `Projector.onClick()`.
+
+
+File I/O
+Operation related to the Projection Matrix
+Plotly related operations
+Trace related operations mostly implement the `visitor pattern`.
+ColorShape (Color & Shape)
+
+
+```python
+model = GPT2Operator().name("gpt2").downloadModel()	# download gpt2 from huggingface
+pj = Projector().name('projector').model(model)
+
+
+
+
+```
 #### Operator
+Model parameters access methods
+Model download, save, load delete methods
+Token accessing methods
+Projection and Similarity methods
+Transformer implementation
+
+
 #### Trace
-#### Inference
+Trace constructor with different ways to provide high dimensional vectors.
+Final layer norm used for visualization only.?
+KNN and closest indices, angles & words; Provide these functions through the Operator. 
+Plot related methods
+
+
 #### Projection
+This is an encapsulation holding on to the PCA projection state and logic to make different projection logic to be tested e.g. different way to normalize the projection.
+Also allow us to test different implementations e.g. numpy and pytorch. You may surprise t
+Their differences is significant.
+
+
+reduce the computation 
+
+
+#### Inference
+Inference encapsulates the whole transformer process on transforming prompt to the final predictions, and allowing certain changes to the transformers to allow us to examine the effects.
+![colorband](https://raw.githubusercontent.com/vitalstarorg/projector/refs/heads/main/nbs/colorband.png)
+
+
+```python
+infer = self.model.inference().prompt(self.prompt2)
+infer.wte().wpe()
+for layer in range(infer.nlayer()):
+    infer.lnorm1(layer).attn(layer).sum()
+    infer.lnorm2(layer).ffn(layer).sum()
+infer.fnorm()
+infer.logits()
+infer.argmax()
+infer.generation()
+```
+
+
 ### Developer Note
 #### Setup for Unit Tests and Notebook
 If you want to get your hand dirty to test out the library, here are the steps
@@ -30,15 +86,33 @@ pip install -r requirements-linux.txt	# for Linux
 export LLM_MODEL_PATH=$(pwd)/model		# directory for storing models
 rm project*.zip					# remove cached files
 pytest --disable-warnings --tb=short tests
-	# you should see 3 test suites
-# tests/test_00projector.py   ... passed
-# tests/test_01gpt2.py        ... passed
-# tests/test_02gpt2np.py      ... failed (pls refers to next section)
+     # you should see 3 test suites
+     # tests/test_00projector.py   ... passed
+     # tests/test_01gpt2.py        ... passed
+     # tests/test_02gpt2np.py      ... failed (as expected)
 
 
 # Run the notebook to generate the image and plot
 jupyter lab -y --NotebookApp.token='' --notebook-dir=. nbs/projector.ipynb
 ```
+#### Setup Docker
+A simple docker file is provided so that you can do the same thing using Docker.
+```bash
+docker build -t projector -f Dockerfile .
+docker run -it -p 8888:8888 \
+     -v $(pwd):/home/ml/projector \
+     -v $HOME/model:/home/ml/model \
+     --name projector --rm projector /bin/bash
+
+
+# Inside the container
+export LLM_MODEL_PATH=$HOME/model
+cd $HOME/projector
+rm project*.zip
+pytest --disable-warnings --tb=short tests
+```
+
+
 #### Use of Numpy
 We have implemented the transformer using both numpy and pytorch. Numpy was our initial implementation by following [picoGPT](https://github.com/jaymody/picoGPT). We put the test harness on this implementation to make sure all math is right. Based on this harness, we reimplement the same object using pytorch as Huggingface is using pytorch. We hope we could reuse the same library for other Huggingface models.
 In order to setup to use Numpy, we need to download the GPT2 checkpoint files and put them in the model directory. Then the 3rd test should pass.
