@@ -11,66 +11,95 @@ A picture worth a thousand words. With this interactive 3d projection done by PC
 Projector is a research tool. We develop this to help us to understand layers of LLM transformation at higher dimensions by visualizing its effect through projected 3d vector space. Emphasis is to make intuitive use of the library objects e.g. _projector_, _projection_ and _trace_, in order to avoid misinterpretation of these vectors.
 ### Main Objects
 #### Projector
-`Projector` is the main object in this library to allow us to manipulate and project high dimensional vectors to a 3d space. It also provides interactivity to explore these vectors and their relationship e.g. projector would respond to mouse click, please see `Projector.onClick()`.
+`Projector` is the main object that aggregates a few helper objects to manipulate and project high dimensional vectors to a 3d space. It can render a single vector or a tensor of vectors in one rendering. It also provides interactivity to help to explore these vectors and their relationship. The main method to provide the interactivity is `Projector.onClick()`.
 
 
-File I/O
-Operation related to the Projection Matrix
-Plotly related operations
-Trace related operations mostly implement the `visitor pattern`.
-ColorShape (Color & Shape)
+The vector visualization is through a trace object created by the projector. The trace object will carry a few key objects from the projector to project and render a vector to the 3d space e.g. projection, similarity, inference, etc. 
 
 
+`Projector` will first set up a stage using plotly FigureWidget with a token embedding cloud as a background before rendering a projected vector from the high dimensional embedding space. This embedding cloud serves as a reference to help us to visualize embedding vectors in relationship to this cloud.
+
+
+`Projector` also sets up a colorShape to keep track of the color and shape used in rendering. We can use different colors and shapes to assign different meanings for each rendering.
+
+
+`Projector` can save some of its helper objects which holding on to the state of the projection to a cache file e.g. PCA projection, current view and camera position so that we can consistently render these vectors and understand their transitions through inferencing.
 ```python
 model = GPT2Operator().name("gpt2").downloadModel()	# download gpt2 from huggingface
 pj = Projector().name('projector').model(model)
-
-
-
-
+pj.loadCache()                                          # load cached view and camera
+pj.showEmbedding()                                      # show embedding cloud
+trace = pj.newTrace().name('origin'). \
+            label('origin').color('black'). \
+            fromVectors(0).show()
 ```
 #### Operator
-Model parameters access methods
-Model download, save, load delete methods
-Token accessing methods
-Projection and Similarity methods
-Transformer implementation
+`Operator` encapsulates a GPT model loading and model parameters access. It also provides a pure form of the GPT2 transformer implementation. Since it works like an adaptor behaving like a gpt model object, we always name this object `model` in our code. We name this class `Operator` to avoid confusion with Huggingface `Model`.
 
 
+We have two implementations. `GPT2Operator` is a PyTorch implementation as our default. `GPT2OperatorNP` is a Numpy implementation. These math implementations are verified and validated by unit tests to ensure its correctness. This harness helps to ensure the math is correct when we are manipulating the high level objects during experiments. We use this to examine different transformer schemes e.g. redefine the transformer architecture, changing similarity measure with different projection, changing the normalization, etc.
+
+
+`Operator` provides quick access to the nearest token of a high dimension vector. This helps to keep track of changes in the nearest tokens during inferencing.
 #### Trace
-Trace constructor with different ways to provide high dimensional vectors.
-Final layer norm used for visualization only.?
-KNN and closest indices, angles & words; Provide these functions through the Operator. 
-Plot related methods
+`Trace` objects are created by the `Projector` object which carries its state objects for both projection and rendering. We can create a trace for a single vector in embedding space, or we can create a trace with multiple vectors as a list or tensor.
 
 
-#### Projection
-This is an encapsulation holding on to the PCA projection state and logic to make different projection logic to be tested e.g. different way to normalize the projection.
-Also allow us to test different implementations e.g. numpy and pytorch. You may surprise t
-Their differences is significant.
+`Trace` objects collaborate with the projector as a visitor to encapsulate its rendering logic and customization within. So we have another variant called `Line` to show different ways of connecting these vectors together e.g. line or radial segments with optional arrows.
 
 
-reduce the computation 
+`Trace` also provides access to the calculation of neighboring vectors based on the defined similarity and their corresponding angles.
 
 
-#### Inference
-Inference encapsulates the whole transformer process on transforming prompt to the final predictions, and allowing certain changes to the transformers to allow us to examine the effects.
-![colorband](https://raw.githubusercontent.com/vitalstarorg/projector/refs/heads/main/nbs/colorband.png)
+`Trace` also implemented the final linear transformation of gpt2. The significance of this implementation is crucial in the visualization. Since most transformed vectors are of bigger norms, and go beyond our visualization range. It is this final transformation, to bring them close to the embedding cloud; therefore, this final transformation is applied to these intermediate vectors in the above animation.
 
 
+In order to understand the true effect of each layer of the transformer to these vectors, `Trace` allows us to define a uniform weight and bias instead of the original final linear transformation. Therefore you may find a choice of use of these transformations in our code.
 ```python
-infer = self.model.inference().prompt(self.prompt2)
+lnfw = pj.model().modelParams().getValue('ln_f.w')
+lnfb = pj.model().modelParams().getValue('ln_f.b')
+pj.wOffset(0.4); pj.bOffset(lnfb);     # using uniform weight with original bais
+# or
+pj.wOffset(lnfw); pj.bOffset(lnfb);    # using original weight and bias
+```
+#### Projection
+`Projection` encapsulates the projection state and logic to make it a changeable component in our research. Currently we are using the first 3 PCA components as our final projection. Surprisingly we found that a slight change in this math, the propagated deviation would cause a significant change in our visualization. We will further investigate its numerical stability. One thing we can tell, there are a few dimensions in the embedding cloud that contribute a significant amplification to the vector norms. Hope to finalize and share that notebook soon.
+
+
+The saving and loading of this object in the `Projector` helps to keep this state consistent in different experiments and inferencing. If we use a larger GPT model, it would reduce the computation during the setup time for a projector.
+#### Inference
+Inference encapsulates the whole transformer process from transforming a prompt to the final predictions. This encapsulation is especially important to safeguard the validity and accuracy of the math when we are composing different transformer architecture using the same model e.g. skip, repeat and swap layers.
+
+
+Below is the GPT2 architecture. It is different from the original transformer, particularly the position of the layer norm.
+
+
+<img src="https://raw.githubusercontent.com/vitalstarorg/projector/refs/heads/main/nbs/gpt2-architecture.png" alt="gpt2 architecture" width="25%" style="display: block; margin: auto;">
+
+
+The following code is the representation of this transformer in Python. 
+```python
+infer = self.model.inference().prompt("Alan Turing theorized that the")
+
+
 infer.wte().wpe()
 for layer in range(infer.nlayer()):
     infer.lnorm1(layer).attn(layer).sum()
     infer.lnorm2(layer).ffn(layer).sum()
-infer.fnorm()
-infer.logits()
-infer.argmax()
-infer.generation()
+infer.fnorm()                # final normalization
+infer.logits()               # output 50257d logits
+infer.argmax()               # next likely predicted token ids
+infer.generation()           # next likely predicted tokens
+
+
+# Alternative, we express the transformer using Smallscript
+infer.ssrun("""self wte | wpe
+       | lnorm1: 0 | attn: 0 | sum | lnorm2: 0 | ffn: 0 | sum
+       | layer: 1 | layer: 2 | layer: 3
+       | layer: 4 | layer: 5 | layer: 6 | layer: 7
+       | layer: 8 | layer: 9 | layer: 10 | layer: 11
+       | fnorm | logits""")  # output 50257d logits
 ```
-
-
 ### Developer Note
 #### Setup for Unit Tests and Notebook
 If you want to get your hand dirty to test out the library, here are the steps
