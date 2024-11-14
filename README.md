@@ -78,20 +78,20 @@ Below we show both the original encoder-decoder transformer and decorder only GP
 <table align="center" border="0px">
   <tr>
     <td align="center">
-      <img src="https://raw.githubusercontent.com/vitalstarorg/projector/refs/heads/main/nbs/ModalNet-21.png" width="300"><br>
-    </td>
-    <td align="center">
-      <img src="https://raw.githubusercontent.com/vitalstarorg/projector/refs/heads/main/nbs/gpt2-architecture.png" width="300"><br>
-    </td>
-  </tr>
-  <tr>
-    <td align="center">
       <b>Original Transformer</b><br>
       <b>Encoder-Decoder Architecture</b>
     </td>
     <td align="center">
       <b>GPT2</b><br>
       <b>Decoder Only Architecture</b>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="https://raw.githubusercontent.com/vitalstarorg/projector/refs/heads/main/nbs/ModalNet-21.png" width="300"><br>
+    </td>
+    <td align="center">
+      <img src="https://raw.githubusercontent.com/vitalstarorg/projector/refs/heads/main/nbs/gpt2-architecture.png" width="300"><br>
     </td>
   </tr>
 </table>
