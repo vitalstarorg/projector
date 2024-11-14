@@ -75,18 +75,27 @@ Saving and loading the `Projection` object within the `Projector` helps maintain
 
 Below we show both the original encoder-decoder transformer and decorder only GPT2 architectures for comparison. In GPT2, the positioning of the layer normalization is different.
 
-<table style="border: none;">
+<table align="center" border="0px">
   <tr>
     <td align="center">
-      <b>Original Transformer Architecture</b>
       <img src="https://raw.githubusercontent.com/vitalstarorg/projector/refs/heads/main/nbs/ModalNet-21.png" width="300"><br>
     </td>
     <td align="center">
-      <b>GPT2 Architecture</b>
       <img src="https://raw.githubusercontent.com/vitalstarorg/projector/refs/heads/main/nbs/gpt2-architecture.png" width="300"><br>
     </td>
   </tr>
+  <tr>
+    <td align="center">
+      <b>Original Transformer</b><br>
+      <b>Encoder-Decoder Architecture</b>
+    </td>
+    <td align="center">
+      <b>GPT2</b><br>
+      <b>Decoder Only Architecture</b>
+    </td>
+  </tr>
 </table>
+
 The following code represents this transformer in Python:
 
 ```python
