@@ -73,12 +73,20 @@ Saving and loading the `Projection` object within the `Projector` helps maintain
 
 `Inference` encapsulates the entire transformer process, from transforming a prompt to making final predictions. This encapsulation is crucial to safeguard the mathematical validity and accuracy when experimenting with different transformer architectures using the same model, such as skipping, repeating, or swapping layers.
 
-Below is the GPT-2 architecture, which differs from the original transformer, particularly in the position of the layer normalization.
+Below we show both the original encoder-decoder transformer and decorder only GPT2 architectures for comparison. The slight different is the position of their layer normalization.
 
-<div align="center">
-    <img src="https://raw.githubusercontent.com/vitalstarorg/projector/refs/heads/main/nbs/gpt2-architecture.png" alt="gpt2 architecture" width="25%">
-</div>
-
+<table>
+  <tr>
+    <td align="center">
+      <b>Original Transformer Architecture</b>
+      <img src="https://raw.githubusercontent.com/vitalstarorg/projector/refs/heads/main/nbs/ModalNet-21.png" width="300"><br>
+    </td>
+    <td align="center">
+      <b>GPT2 Architecture</b>
+      <img src="https://raw.githubusercontent.com/vitalstarorg/projector/refs/heads/main/nbs/gpt2-architecture.png" width="300"><br>
+    </td>
+  </tr>
+</table>
 The following code represents this transformer in Python:
 
 ```python
